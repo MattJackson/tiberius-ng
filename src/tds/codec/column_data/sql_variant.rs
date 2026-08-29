@@ -76,6 +76,15 @@ where
     // Number of bytes of the actual value that follow the property metadata.
     let data_len = total_len - 2 - prop_bytes;
 
+    // `sql_variant` cannot carry a LOB/(max) value, so `data_len` is bounded by
+    // MAX_VARIANT_PAYLOAD. Reject an over-large server-supplied length before it
+    // is used to size any allocation (read_bytes).
+    if data_len > MAX_VARIANT_PAYLOAD {
+        return Err(Error::Protocol(
+            format!("sql_variant: value length {data_len} exceeds the maximum").into(),
+        ));
+    }
+
     // Fixed-length base types (bit, tinyint, smallint, int, bigint, real,
     // float, money, smallmoney, datetime, smalldatetime) carry no property
     // bytes and are decoded exactly like a fixed-length column value.
@@ -177,7 +186,10 @@ where
             let time_len = data_len.checked_sub(5).ok_or_else(|| {
                 Error::Protocol("sql_variant: datetimeoffset value too short".into())
             })?;
-            let dto = crate::tds::time::DateTimeOffset::decode(src, scale, time_len as u8).await?;
+            let time_len = u8::try_from(time_len).map_err(|_| {
+                Error::Protocol("sql_variant: datetimeoffset time length too large".into())
+            })?;
+            let dto = crate::tds::time::DateTimeOffset::decode(src, scale, time_len).await?;
 
             ColumnData::DateTimeOffset(Some(dto))
         }
@@ -215,6 +227,14 @@ where
 {
     if data_len == 0 {
         return Err(Error::Protocol("sql_variant: empty numeric value".into()));
+    }
+
+    // The scale byte is server-controlled; Numeric::new_with_scale requires
+    // scale <= 38 (and would otherwise panic).
+    if scale > 38 {
+        return Err(Error::Protocol(
+            format!("sql_variant: invalid numeric scale {scale}").into(),
+        ));
     }
 
     let sign = match src.read_u8().await? {

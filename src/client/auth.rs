@@ -50,7 +50,7 @@ impl Debug for WindowsAuth {
 }
 
 /// Defines the method of authentication to the server.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum AuthMethod {
     /// Authenticate directly with SQL Server.
     SqlServer(SqlServerAuth),
@@ -80,6 +80,26 @@ pub enum AuthMethod {
     AADToken(String),
     #[doc(hidden)]
     None,
+}
+
+// Manual Debug so the AAD bearer token is never printed. The credential-bearing
+// SqlServer/Windows variants delegate to their inner types, which already redact.
+impl Debug for AuthMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SqlServer(a) => f.debug_tuple("SqlServer").field(a).finish(),
+            #[cfg(any(all(windows, feature = "winauth"), all(unix, feature = "sspi-rs"), doc))]
+            Self::Windows(a) => f.debug_tuple("Windows").field(a).finish(),
+            #[cfg(any(
+                all(windows, feature = "winauth"),
+                all(unix, feature = "integrated-auth-gssapi"),
+                doc
+            ))]
+            Self::Integrated => f.write_str("Integrated"),
+            Self::AADToken(_) => f.debug_tuple("AADToken").field(&"<HIDDEN>").finish(),
+            Self::None => f.write_str("None"),
+        }
+    }
 }
 
 impl AuthMethod {

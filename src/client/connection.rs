@@ -464,7 +464,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                         let token = TokenSspi::new(sspi_response);
                         self.send(header, token).await?;
                     }
-                    None => unreachable!(),
+                    None => {
+                        return Err(crate::Error::Protocol(
+                            "NTLM handshake produced no response to the server challenge".into(),
+                        ))
+                    }
                 }
             }
             #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
@@ -611,7 +615,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                         let token = TokenSspi::new(sspi_response);
                         self.send(header, token).await?;
                     }
-                    None => unreachable!(),
+                    None => {
+                        return Err(crate::Error::Protocol(
+                            "NTLM handshake produced no response to the server challenge".into(),
+                        ))
+                    }
                 }
             }
             AuthMethod::None => {

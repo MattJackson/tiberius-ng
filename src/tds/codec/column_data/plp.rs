@@ -39,11 +39,6 @@ where
                 _ => Vec::with_capacity((len as usize).min(super::MAX_PREALLOC)),
             };
 
-            // Reusable stack buffer so each chunk is read in bounded bulk copies
-            // rather than one async `read_u8()` future per byte, without ever
-            // pre-allocating a whole (untrusted) chunk length up front.
-            let mut scratch = [0u8; super::MAX_PREALLOC];
-
             loop {
                 let chunk_size = src.read_u32_le().await? as usize;
 
@@ -51,11 +46,15 @@ where
                     break; // found a sentinel, we're done
                 }
 
+                // Grow the output in bounded increments and read straight into
+                // it: one copy (socket -> data), no per-byte futures, and never
+                // a whole (untrusted) chunk length reserved up front.
                 let mut remaining = chunk_size;
                 while remaining > 0 {
-                    let take = remaining.min(scratch.len());
-                    src.read_exact(&mut scratch[..take]).await?;
-                    data.extend_from_slice(&scratch[..take]);
+                    let take = remaining.min(super::MAX_PREALLOC);
+                    let start = data.len();
+                    data.resize(start + take, 0);
+                    src.read_exact(&mut data[start..]).await?;
                     remaining -= take;
                 }
             }

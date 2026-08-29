@@ -65,7 +65,13 @@ impl TokenDone {
     }
 
     pub(crate) fn rows(&self) -> u64 {
-        self.done_rows
+        // The row count is only meaningful when the DONE_COUNT status bit is
+        // set (MS-TDS §2.2.7.6); otherwise the field is not a valid count.
+        if self.status.contains(DoneStatus::Count) {
+            self.done_rows
+        } else {
+            0
+        }
     }
 }
 

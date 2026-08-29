@@ -866,6 +866,9 @@ pub(crate) trait ConfigString {
                 Err(_) if val.eq_ignore_ascii_case("strict") && cfg!(feature = "tds80") => {
                     Ok(EncryptionLevel::Strict)
                 }
+                Err(_) if val.eq_ignore_ascii_case("strict") => Err(crate::Error::Conversion(
+                    "encrypt=strict requires the crate's `tds80` feature to be enabled".into(),
+                )),
                 Err(e) => Err(e),
             })
             .unwrap_or(Ok(EncryptionLevel::Off))
