@@ -2,8 +2,8 @@ use crate::tds::codec::TokenSspi;
 use crate::{
     client::Connection,
     tds::codec::{
-        TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenFeatureExtAck, TokenInfo,
-        TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow,
+        TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenFeatureExtAck,
+        TokenFedAuthInfo, TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow,
     },
     Error, SqlReadBytes, TokenType,
 };
@@ -30,6 +30,7 @@ pub enum ReceivedToken {
     LoginAck(TokenLoginAck),
     Sspi(TokenSspi),
     FeatureExtAck(TokenFeatureExtAck),
+    FedAuthInfo(TokenFedAuthInfo),
     Error(TokenError),
 }
 
@@ -211,6 +212,12 @@ where
         Ok(ReceivedToken::FeatureExtAck(ack))
     }
 
+    async fn get_fed_auth_info(&mut self) -> crate::Result<ReceivedToken> {
+        let info = TokenFedAuthInfo::decode(self.conn).await?;
+        event!(Level::TRACE, message = ?info);
+        Ok(ReceivedToken::FedAuthInfo(info))
+    }
+
     async fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
         let sspi = TokenSspi::decode_async(self.conn).await?;
         event!(Level::TRACE, "SSPI response");
@@ -246,6 +253,7 @@ where
                 TokenType::Info => this.get_info().await?,
                 TokenType::LoginAck => this.get_login_ack().await?,
                 TokenType::Sspi => this.get_sspi().await?,
+                TokenType::FedAuthInfo => this.get_fed_auth_info().await?,
                 TokenType::FeatureExtAck => this.get_feature_ext_ack().await?,
                 _ => panic!("Token {:?} unimplemented!", ty),
             };
