@@ -43,6 +43,7 @@ where
         Text => super::text::decode(src, collation).await?,
         NText => super::text::decode(src, None).await?,
         Image => super::image::decode(src).await?,
+        SSVariant => super::sql_variant::decode(src).await?,
         t => {
             return Err(Error::Protocol(
                 format!("unsupported column type: {:?}", t).into(),
