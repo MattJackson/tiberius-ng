@@ -108,6 +108,14 @@ impl PacketHeader {
         }
     }
 
+    pub fn transaction_manager(id: u8) -> Self {
+        Self {
+            ty: PacketType::TransactionManagerReq,
+            status: PacketStatus::EndOfMessage,
+            ..Self::new(0, id)
+        }
+    }
+
     pub fn set_status(&mut self, status: PacketStatus) {
         self.status = status;
     }
