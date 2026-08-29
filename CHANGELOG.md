@@ -140,6 +140,20 @@ long-standing bug reports, and substantially extends TDS protocol coverage
 - Fixed the docs.rs build (use the `docsrs` cfg instead of a nightly-only `docs`
   feature) and cleared all `clippy -D warnings`.
 - Modernized dependencies and added ~90 unit tests, roughly doubling coverage.
+- Declared an MSRV of Rust 1.88 (`rust-version`) with a dedicated CI job, and
+  added an advisory `cargo-semver-checks` job plus a `cargo-deny` license gate.
+
+### Removed
+
+- **Dropped async-std support.** The discontinued `async-std` runtime
+  (RUSTSEC-2025-0052) is no longer a supported runtime: the
+  `sql-browser-async-std` feature, its SQL Browser implementation, and the
+  async-std example/tests are removed, eliminating `async-std` from the
+  dependency graph entirely. Tiberius remains runtime-independent — use **tokio**
+  or **smol** (or any `AsyncRead + AsyncWrite` transport). The internal
+  dual-runtime test harness now exercises every integration test on tokio **and**
+  smol. *Breaking* for downstreams using the `sql-browser-async-std` feature;
+  switch to `sql-browser-tokio` or `sql-browser-smol`.
 
 ### Notes
 

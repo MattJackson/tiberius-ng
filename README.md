@@ -22,8 +22,8 @@
 Tiberius speaks the TDS protocol directly, so you can talk to **Microsoft SQL
 Server** and **Azure SQL** from Rust on Linux, macOS and Windows — with no ODBC,
 no FreeTDS, and no C toolchain in the default build. It is not tied to any async
-runtime: give it anything implementing `AsyncRead + AsyncWrite` (Tokio,
-async-std or smol) and it does the rest.
+runtime: give it anything implementing `AsyncRead + AsyncWrite` (Tokio or
+smol) and it does the rest.
 
 > ### ℹ️ About this project
 >
@@ -35,7 +35,7 @@ async-std or smol) and it does the rest.
 
 ## Highlights
 
-- 🔌 **Runtime-agnostic** — works with Tokio, async-std, and smol.
+- 🔌 **Runtime-agnostic** — works with Tokio and smol (any `AsyncRead + AsyncWrite`).
 - 🔐 **TLS-first, incl. TDS 8.0 "strict"** — `native-tls`, `rustls`, or vendored
   OpenSSL; `hostname_in_certificate`, ALPN `tds/8.0`, and mutual-TLS client
   certificates.
@@ -123,7 +123,7 @@ and `Config::from_jdbc_string(…)` are both supported, or build one fluently wi
 | `chrono` / `time` | Date-time values via `chrono` / the `time` crate | |
 | `rust_decimal` / `bigdecimal` | `numeric`/`decimal` via `Decimal` / `BigDecimal` | |
 | `serde` | `Serialize`/`Deserialize` for result types | |
-| `sql-browser-tokio` / `-async-std` / `-smol` | Resolve named instances via SQL Browser | |
+| `sql-browser-tokio` / `-smol` | Resolve named instances via SQL Browser | |
 | `integrated-auth-gssapi` | Kerberos/GSSAPI integrated auth (Unix) | |
 | `sspi-rs` | Windows-style NTLM auth on Linux/macOS without Kerberos | |
 
@@ -135,7 +135,7 @@ for the full API.
 Tiberius takes any `AsyncRead + AsyncWrite` socket, so it runs under:
 
 - **Tokio** — wrap the stream with `tokio_util::compat`.
-- **async-std** / **smol** — pass the `TcpStream` directly.
+- **smol** — pass the `TcpStream` directly.
 
 Connection pooling is intentionally out of scope — use
 [`bb8`](https://crates.io/crates/bb8), [`deadpool`](https://crates.io/crates/deadpool)

@@ -236,7 +236,7 @@ jobs:
       fail-fast: false
       matrix:
         features:
-          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,rust_decimal,bigdecimal"
+          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-tokio,sql-browser-smol,rust_decimal,bigdecimal"
           - "--no-default-features --features=vendored-openssl"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

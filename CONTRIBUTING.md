@@ -107,7 +107,7 @@ Notes:
 - The container takes a few seconds to accept connections after `up -d`. If the
   first run fails to connect, wait a moment and retry.
 - Named-instance tests require the SQL Browser and the matching feature flag
-  (`sql-browser-tokio`, `sql-browser-async-std`, or `sql-browser-smol`); they are
+  (`sql-browser-tokio` or `sql-browser-smol`); they are
   gated behind `required-features` and are skipped otherwise.
 - When you are done: `docker compose down`.
 
@@ -150,7 +150,7 @@ Policy (see `deny.toml`):
 - **advisories** — any security vulnerability or yanked crate in the actually
   built graph fails the check. The `ignore` list contains only advisories that
   are provably not part of the shipped default library (dev-dependencies, or
-  opt-in non-default features such as `sql-browser-async-std`). Every ignore
+  opt-in non-default features). Every ignore
   entry carries a written justification; if you add one, explain *why* it cannot
   affect a downstream user of the default crate.
 - **bans** — duplicate versions are a warning, not a hard failure.
@@ -167,14 +167,13 @@ adding dependencies to the default feature set unless necessary.
 Optional functionality is gated behind Cargo features (see `[features]` in
 `Cargo.toml`). Highlights:
 
-- **`default = ["tds73", "winauth", "native-tls"]`** — the default build.
+- **`default = ["tds80", "winauth", "native-tls"]`** — the default build.
 - **`all`** — turns on every feature; used for CI and docs.
 - **TLS backends** — `native-tls` (default; links the OS TLS library), `rustls`
   (pure-Rust, no dynamic system dependency; recommended on Apple platforms), and
   `vendored-openssl` (statically links OpenSSL).
-- **Async runtimes / SQL Browser** — `sql-browser-tokio`,
-  `sql-browser-async-std`, `sql-browser-smol` enable named-instance resolution
-  for each runtime.
+- **Async runtimes / SQL Browser** — `sql-browser-tokio` and
+  `sql-browser-smol` enable named-instance resolution for each runtime.
 - **Type support** — `chrono`, `time`, `rust_decimal`, `bigdecimal` map extra
   SQL types to those crates.
 - **`tds73`** — enables TDS 7.3 protocol features (date/time types).
