@@ -830,9 +830,34 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 if ty == &VarLenType::Numericn || ty == &VarLenType::Decimaln =>
             {
                 if let Some(num) = opt {
-                    if scale != &num.scale() {
-                        todo!("this still need some work, if client scale not aligned with server, we need to do conversion but will lose precision")
-                    }
+                    // The value is sent at the column's scale (the scale lives in
+                    // the TYPE_INFO, not the value), so rescale when the client
+                    // value's scale differs from the target column's scale.
+                    let target_scale = *scale;
+                    let num = if target_scale == num.scale() {
+                        num
+                    } else if target_scale > num.scale() {
+                        // Scale up: multiply, checking for i128 overflow.
+                        let factor = 10i128.pow((target_scale - num.scale()) as u32);
+                        let value = num.value().checked_mul(factor).ok_or_else(|| {
+                            crate::Error::Conversion(
+                                "numeric value overflows when scaling to the column's scale".into(),
+                            )
+                        })?;
+                        Numeric::new_with_scale(value, target_scale)
+                    } else {
+                        // Scale down: divide, rounding half away from zero
+                        // (this loses precision beyond the column's scale).
+                        let factor = 10i128.pow((num.scale() - target_scale) as u32);
+                        let half = factor / 2;
+                        let v = num.value();
+                        let value = if v >= 0 {
+                            (v + half) / factor
+                        } else {
+                            (v - half) / factor
+                        };
+                        Numeric::new_with_scale(value, target_scale)
+                    };
                     num.encode(&mut *dst)?;
                 } else {
                     dst.put_u8(0);
