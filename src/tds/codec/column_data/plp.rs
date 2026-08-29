@@ -33,8 +33,10 @@ where
                 0xffffffffffffffff => return Ok(None),
                 // Unknown size
                 0xfffffffffffffffe => Vec::new(),
-                // Known size
-                _ => Vec::with_capacity(len as usize),
+                // Known size. `len` is an untrusted 64-bit wire value; cap the
+                // up-front reservation (avoids memory-exhaustion and the
+                // `Vec` capacity-overflow panic for values near u64::MAX).
+                _ => Vec::with_capacity((len as usize).min(super::MAX_PREALLOC)),
             };
 
             let mut chunk_data_left = 0;

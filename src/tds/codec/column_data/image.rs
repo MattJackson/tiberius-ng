@@ -18,7 +18,8 @@ where
     src.read_u32_le().await?; // second fractions
 
     let len = src.read_u32_le().await? as usize;
-    let mut buf = Vec::with_capacity(len);
+    // `len` is untrusted; cap the up-front reservation (see MAX_PREALLOC).
+    let mut buf = Vec::with_capacity(len.min(super::MAX_PREALLOC));
 
     for _ in 0..len {
         buf.push(src.read_u8().await?);

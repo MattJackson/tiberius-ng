@@ -24,6 +24,17 @@ mod udt;
 mod var_len;
 mod xml;
 
+/// Upper bound on how many bytes a value decoder will *pre-allocate* from a
+/// server-supplied length field before it has read the corresponding data.
+///
+/// The wire length is untrusted: a malformed or hostile server can claim a
+/// value is up to `u32::MAX`/`u64::MAX` bytes long. Reserving that up front is a
+/// memory-exhaustion vector (and, for `u64` lengths, can even exceed `Vec`'s
+/// `isize::MAX` capacity limit and panic). Decoders therefore cap the initial
+/// reservation to this value and let the buffer grow as bytes actually arrive;
+/// a short/lying length still fails cleanly when the read runs out of input.
+pub(crate) const MAX_PREALLOC: usize = 8 * 1024;
+
 use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 #[cfg(feature = "tds73")]
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};

@@ -163,7 +163,10 @@ where
         VarLenType::Datetime2 => {
             // propData = scale (1 byte); value = time bytes + 3 date bytes.
             let scale = src.read_u8().await? as usize;
-            let dt = crate::tds::time::DateTime2::decode(src, scale, data_len - 3).await?;
+            let time_len = data_len
+                .checked_sub(3)
+                .ok_or_else(|| Error::Protocol("sql_variant: datetime2 value too short".into()))?;
+            let dt = crate::tds::time::DateTime2::decode(src, scale, time_len).await?;
 
             ColumnData::DateTime2(Some(dt))
         }
@@ -171,8 +174,10 @@ where
         VarLenType::DatetimeOffsetn => {
             // propData = scale (1 byte); value = datetime2 bytes + 2 offset bytes.
             let scale = src.read_u8().await? as usize;
-            let dto =
-                crate::tds::time::DateTimeOffset::decode(src, scale, (data_len - 5) as u8).await?;
+            let time_len = data_len.checked_sub(5).ok_or_else(|| {
+                Error::Protocol("sql_variant: datetimeoffset value too short".into())
+            })?;
+            let dto = crate::tds::time::DateTimeOffset::decode(src, scale, time_len as u8).await?;
 
             ColumnData::DateTimeOffset(Some(dto))
         }

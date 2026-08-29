@@ -9,7 +9,12 @@ where
     let date = match rlen {
         0 => ColumnData::DateTime2(None),
         rlen => {
-            let dt = DateTime2::decode(src, len, rlen as usize - 3).await?;
+            // A datetime2 value is a `time` portion (rlen - 3 bytes) followed by
+            // a 3-byte `date`. A server-supplied rlen < 3 would underflow.
+            let time_len = (rlen as usize).checked_sub(3).ok_or_else(|| {
+                crate::Error::Protocol(format!("datetime2: invalid value length {rlen}").into())
+            })?;
+            let dt = DateTime2::decode(src, len, time_len).await?;
             ColumnData::DateTime2(Some(dt))
         }
     };

@@ -25,7 +25,7 @@ where
         Some(collation) => {
             let encoder = collation.encoding()?;
             let text_len = src.read_u32_le().await? as usize;
-            let mut buf = Vec::with_capacity(text_len);
+            let mut buf = Vec::with_capacity(text_len.min(super::MAX_PREALLOC));
 
             for _ in 0..text_len {
                 buf.push(src.read_u8().await?);
@@ -39,7 +39,8 @@ where
         // NTEXT
         None => {
             let text_len = src.read_u32_le().await? as usize / 2;
-            let mut buf = Vec::with_capacity(text_len);
+            // u16 elements; cap the reservation to MAX_PREALLOC bytes' worth.
+            let mut buf = Vec::with_capacity(text_len.min(super::MAX_PREALLOC / 2));
 
             for _ in 0..text_len {
                 buf.push(src.read_u16_le().await?);
