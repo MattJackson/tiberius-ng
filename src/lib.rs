@@ -288,8 +288,9 @@ pub use row::{Column, ColumnType, Row};
 pub use sql_browser::SqlBrowser;
 pub use tds::{
     codec::{
-        BaseMetaDataColumn, BulkLoadRequest, ColumnData, ColumnFlag, FixedLenType, IntoRow,
-        MetaDataColumn, TokenRow, TypeInfo, TypeLength, VarLenContext, VarLenType,
+        AltMetaDataColumn, BaseMetaDataColumn, BulkLoadRequest, ColumnData, ColumnFlag,
+        FixedLenType, IntoRow, MetaDataColumn, TokenAltMetaData, TokenAltRow, TokenRow, TypeInfo,
+        TypeLength, VarLenContext, VarLenType,
     },
     collation::Collation,
     numeric,

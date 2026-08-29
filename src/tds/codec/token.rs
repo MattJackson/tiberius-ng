@@ -1,3 +1,5 @@
+mod token_alt_meta_data;
+mod token_alt_row;
 mod token_col_info;
 mod token_col_metadata;
 mod token_done;
@@ -15,6 +17,8 @@ mod token_sspi;
 mod token_tab_name;
 mod token_type;
 
+pub use token_alt_meta_data::*;
+pub use token_alt_row::*;
 pub use token_col_info::*;
 pub use token_col_metadata::*;
 pub use token_done::*;

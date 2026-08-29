@@ -2,9 +2,9 @@ use crate::tds::codec::TokenSspi;
 use crate::{
     client::Connection,
     tds::codec::{
-        TokenColInfo, TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenFeatureExtAck,
-        TokenFedAuthInfo, TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow,
-        TokenSessionState, TokenTabName,
+        TokenAltMetaData, TokenAltRow, TokenColInfo, TokenColMetaData, TokenDone, TokenEnvChange,
+        TokenError, TokenFeatureExtAck, TokenFedAuthInfo, TokenInfo, TokenLoginAck, TokenOrder,
+        TokenReturnValue, TokenRow, TokenSessionState, TokenTabName,
     },
     Error, SqlReadBytes, TokenType,
 };
@@ -19,7 +19,9 @@ use tracing::{event, Level};
 #[allow(dead_code)]
 pub enum ReceivedToken {
     NewResultset(Arc<TokenColMetaData<'static>>),
+    NewAltResultset(Arc<TokenAltMetaData<'static>>),
     Row(TokenRow<'static>),
+    AltRow(TokenAltRow<'static>),
     Done(TokenDone),
     DoneInProc(TokenDone),
     DoneProc(TokenDone),
@@ -136,6 +138,30 @@ where
         event!(Level::TRACE, ?meta);
 
         Ok(ReceivedToken::NewResultset(meta))
+    }
+
+    async fn get_alt_col_metadata(&mut self) -> crate::Result<ReceivedToken> {
+        let meta = Arc::new(TokenAltMetaData::decode(self.conn).await?);
+        self.conn.context_mut().set_alt_meta(meta.clone());
+
+        event!(Level::TRACE, ?meta);
+
+        Ok(ReceivedToken::NewAltResultset(meta))
+    }
+
+    async fn get_alt_row(&mut self) -> crate::Result<ReceivedToken> {
+        // The id is read first so the matching ALTMETADATA can be looked up
+        // before the column values are parsed.
+        let id = self.conn.read_u16_le().await?;
+
+        let meta = self.conn.context().alt_meta(id).ok_or_else(|| {
+            Error::Protocol(format!("ALTROW for unknown compute id {}", id).into())
+        })?;
+
+        let row = TokenAltRow::decode(self.conn, id, &meta).await?;
+
+        event!(Level::TRACE, message = ?row);
+        Ok(ReceivedToken::AltRow(row))
     }
 
     async fn get_row(&mut self) -> crate::Result<ReceivedToken> {
@@ -296,7 +322,9 @@ where
             let token = match ty {
                 TokenType::ReturnStatus => this.get_return_status().await?,
                 TokenType::ColMetaData => this.get_col_metadata().await?,
+                TokenType::AltMetaData => this.get_alt_col_metadata().await?,
                 TokenType::Row => this.get_row().await?,
+                TokenType::AltRow => this.get_alt_row().await?,
                 TokenType::NbcRow => this.get_nbc_row().await?,
                 TokenType::Done => this.get_done_value().await?,
                 TokenType::DoneProc => this.get_done_proc_value().await?,
