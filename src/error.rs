@@ -232,11 +232,13 @@ mod tests {
     }
 
     #[test]
+    #[allow(invalid_from_utf8)] // intentionally-invalid bytes to exercise the error path
     fn from_utf8_and_utf16_errors() {
         let utf8_err = String::from_utf8(vec![0xff, 0xfe]).unwrap_err();
         assert!(matches!(Error::from(utf8_err), Error::Utf8));
 
-        let str_utf8 = std::str::from_utf8(&[0xff, 0xfe]).unwrap_err();
+        let invalid: &[u8] = &[0xff, 0xfe];
+        let str_utf8 = std::str::from_utf8(invalid).unwrap_err();
         assert!(matches!(Error::from(str_utf8), Error::Utf8));
 
         let utf16_err = String::from_utf16(&[0xd800]).unwrap_err();
