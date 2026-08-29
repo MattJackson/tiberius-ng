@@ -3,7 +3,8 @@ use crate::{
     client::Connection,
     tds::codec::{
         TokenColInfo, TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenFeatureExtAck,
-        TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow, TokenSessionState,
+        TokenFedAuthInfo, TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow,
+        TokenSessionState,
     },
     Error, SqlReadBytes, TokenType,
 };
@@ -32,6 +33,7 @@ pub enum ReceivedToken {
     Sspi(TokenSspi),
     FeatureExtAck(TokenFeatureExtAck),
     SessionState(TokenSessionState),
+    FedAuthInfo(TokenFedAuthInfo),
     Error(TokenError),
 }
 
@@ -231,6 +233,12 @@ where
         Ok(ReceivedToken::SessionState(state))
     }
 
+    async fn get_fed_auth_info(&mut self) -> crate::Result<ReceivedToken> {
+        let info = TokenFedAuthInfo::decode(self.conn).await?;
+        event!(Level::TRACE, message = ?info);
+        Ok(ReceivedToken::FedAuthInfo(info))
+    }
+
     async fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
         let sspi = TokenSspi::decode_async(self.conn).await?;
         event!(Level::TRACE, "SSPI response");
@@ -268,6 +276,7 @@ where
                 TokenType::LoginAck => this.get_login_ack().await?,
                 TokenType::Sspi => this.get_sspi().await?,
                 TokenType::SessionState => this.get_session_state().await?,
+                TokenType::FedAuthInfo => this.get_fed_auth_info().await?,
                 TokenType::FeatureExtAck => this.get_feature_ext_ack().await?,
                 // Defensive fallback for any token type without a dedicated
                 // handler. Currently every variant is handled, so this is
