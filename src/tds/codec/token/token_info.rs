@@ -41,3 +41,51 @@ impl TokenInfo {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+
+    fn put_b_varchar(buf: &mut BytesMut, s: &str) {
+        let utf16: Vec<u16> = s.encode_utf16().collect();
+        buf.put_u8(utf16.len() as u8);
+        for c in utf16 {
+            buf.put_u16_le(c);
+        }
+    }
+
+    fn put_us_varchar(buf: &mut BytesMut, s: &str) {
+        let utf16: Vec<u16> = s.encode_utf16().collect();
+        buf.put_u16_le(utf16.len() as u16);
+        for c in utf16 {
+            buf.put_u16_le(c);
+        }
+    }
+
+    #[tokio::test]
+    async fn decodes_all_fields() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(0); // length, ignored
+        buf.put_u32_le(4711);
+        buf.put_u8(2);
+        buf.put_u8(9);
+        put_us_varchar(&mut buf, "informational");
+        put_b_varchar(&mut buf, "server");
+        put_b_varchar(&mut buf, "proc");
+        buf.put_u32_le(123);
+
+        let info = TokenInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(info.number, 4711);
+        assert_eq!(info.state, 2);
+        assert_eq!(info.class, 9);
+        assert_eq!(info.message, "informational");
+        assert_eq!(info.server, "server");
+        assert_eq!(info.procedure, "proc");
+        assert_eq!(info.line, 123);
+    }
+}

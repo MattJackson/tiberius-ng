@@ -60,3 +60,60 @@ impl TokenFeatureExtAck {
         Ok(TokenFeatureExtAck { features })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+
+    #[tokio::test]
+    async fn decodes_fedauth_with_nonce() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(FEA_EXT_FEDAUTH);
+        buf.put_u32_le(32);
+        buf.extend_from_slice(&[7u8; 32]);
+        buf.put_u8(FEA_EXT_TERMINATOR);
+
+        let ack = TokenFeatureExtAck::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(ack.features.len(), 1);
+        match &ack.features[0] {
+            FeatureAck::FedAuth(FedAuthAck::SecurityToken { nonce }) => {
+                assert_eq!(*nonce, Some([7u8; 32]));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn decodes_fedauth_without_nonce() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(FEA_EXT_FEDAUTH);
+        buf.put_u32_le(0);
+        buf.put_u8(FEA_EXT_TERMINATOR);
+
+        let ack = TokenFeatureExtAck::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        match &ack.features[0] {
+            FeatureAck::FedAuth(FedAuthAck::SecurityToken { nonce }) => {
+                assert!(nonce.is_none());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_feature_list() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(FEA_EXT_TERMINATOR);
+
+        let ack = TokenFeatureExtAck::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert!(ack.features.is_empty());
+    }
+}

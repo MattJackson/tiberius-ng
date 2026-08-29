@@ -404,3 +404,184 @@ impl BaseMetaDataColumn {
         Ok(BaseMetaDataColumn { flags, ty })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use crate::tds::Collation;
+    use crate::VarLenContext;
+
+    fn meta(ty: TypeInfo, name: &'static str) -> MetaDataColumn<'static> {
+        MetaDataColumn {
+            base: BaseMetaDataColumn {
+                flags: ColumnFlag::Nullable.into(),
+                ty,
+            },
+            col_name: Cow::Borrowed(name),
+        }
+    }
+
+    #[tokio::test]
+    async fn round_trip_via_encode_decode() {
+        let cmd = TokenColMetaData {
+            columns: vec![
+                meta(TypeInfo::FixedLen(FixedLenType::Int4), "id"),
+                meta(
+                    TypeInfo::VarLenSized(VarLenContext::new(
+                        VarLenType::NVarchar,
+                        4000,
+                        Some(Collation::new(13632521, 52)),
+                    )),
+                    "name",
+                ),
+            ],
+        };
+
+        // Build a decodable buffer: column count followed by each column. The
+        // MetaDataColumn encoder writes the leading user-type u32 that the
+        // decoder expects.
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(cmd.columns.len() as u16);
+        for col in cmd.columns.iter().cloned() {
+            col.encode(&mut buf).unwrap();
+        }
+
+        let decoded = TokenColMetaData::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(decoded.columns.len(), 2);
+        assert_eq!(decoded.columns[0].col_name, "id");
+        assert_eq!(decoded.columns[1].col_name, "name");
+
+        let columns: Vec<_> = decoded.columns().collect();
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].name(), "id");
+    }
+
+    #[tokio::test]
+    async fn zero_columns_yields_empty() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(0);
+
+        let decoded = TokenColMetaData::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+        assert!(decoded.columns.is_empty());
+    }
+
+    #[tokio::test]
+    async fn text_column_reads_table_name_parts() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(1); // one column
+
+        // user_ty + flags
+        buf.put_u32_le(0);
+        buf.put_u16_le(BitFlags::bits(BitFlags::from(ColumnFlag::Nullable)));
+
+        // type info for a text column with collation
+        let ti = TypeInfo::VarLenSized(VarLenContext::new(
+            VarLenType::Text,
+            2147483647,
+            Some(Collation::new(13632521, 52)),
+        ));
+        ti.encode(&mut buf).unwrap();
+
+        // table name: one part, us_varchar "dbo"
+        buf.put_u8(1);
+        let part: Vec<u16> = "dbo".encode_utf16().collect();
+        buf.put_u16_le(part.len() as u16);
+        for c in part {
+            buf.put_u16_le(c);
+        }
+
+        // column name (b_varchar)
+        let name: Vec<u16> = "body".encode_utf16().collect();
+        buf.put_u8(name.len() as u8);
+        for c in name {
+            buf.put_u16_le(c);
+        }
+
+        let decoded = TokenColMetaData::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(decoded.columns.len(), 1);
+        assert_eq!(decoded.columns[0].col_name, "body");
+    }
+
+    #[test]
+    fn display_formats_various_types() {
+        let cases = vec![
+            (TypeInfo::FixedLen(FixedLenType::Int4), "c int"),
+            (TypeInfo::FixedLen(FixedLenType::Bit), "c bit"),
+            (TypeInfo::FixedLen(FixedLenType::Float8), "c float"),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+                "c tinyint",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 4, None)),
+                "c int",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+                "c real",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+                "c uniqueidentifier",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 100, None)),
+                "c varbinary(100)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 100000, None)),
+                "c varbinary(max)",
+            ),
+            (
+                TypeInfo::VarLenSizedPrecision {
+                    ty: VarLenType::Decimaln,
+                    size: 17,
+                    precision: 18,
+                    scale: 2,
+                },
+                "c decimal(18,2)",
+            ),
+            (
+                TypeInfo::Xml {
+                    schema: None,
+                    size: 0,
+                },
+                "c xml",
+            ),
+        ];
+
+        for (ty, expected) in cases {
+            assert_eq!(format!("{}", meta(ty, "c")), expected);
+        }
+    }
+
+    #[test]
+    fn null_value_maps_types() {
+        let fixed = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::FixedLen(FixedLenType::Int4),
+        };
+        assert_eq!(fixed.null_value(), ColumnData::I32(None));
+
+        let varlen = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+        };
+        assert_eq!(varlen.null_value(), ColumnData::I16(None));
+
+        let guid = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+        };
+        assert_eq!(guid.null_value(), ColumnData::Guid(None));
+    }
+}

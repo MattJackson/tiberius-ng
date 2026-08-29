@@ -22,3 +22,38 @@ impl TokenOrder {
         Ok(TokenOrder { column_indexes })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+
+    #[tokio::test]
+    async fn decodes_column_indexes() {
+        let mut buf = BytesMut::new();
+        // length is in bytes; three u16 indexes => 6 bytes
+        buf.put_u16_le(6);
+        buf.put_u16_le(1);
+        buf.put_u16_le(2);
+        buf.put_u16_le(3);
+
+        let order = TokenOrder::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(order.column_indexes, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn decodes_empty() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(0);
+
+        let order = TokenOrder::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert!(order.column_indexes.is_empty());
+    }
+}

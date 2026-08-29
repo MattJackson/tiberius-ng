@@ -93,3 +93,82 @@ impl fmt::Display for TokenDone {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn decode_final_done() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(0); // status: empty => final
+        buf.put_u16_le(0); // cur_cmd
+        buf.put_u64_le(0); // done_rows (SqlServerN => 8 bytes)
+
+        let done = TokenDone::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert!(done.is_final());
+        assert_eq!(done.rows(), 0);
+        assert!(format!("{}", done).starts_with("Done with status"));
+    }
+
+    #[tokio::test]
+    async fn decode_with_count_and_rows() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(DoneStatus::Count as u16);
+        buf.put_u16_le(0);
+        buf.put_u64_le(5);
+
+        let done = TokenDone::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert!(!done.is_final());
+        assert_eq!(done.rows(), 5);
+        assert!(format!("{}", done).contains("5 rows left"));
+    }
+
+    #[tokio::test]
+    async fn decode_single_row_display() {
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(DoneStatus::Count as u16);
+        buf.put_u16_le(0);
+        buf.put_u64_le(1);
+
+        let done = TokenDone::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert!(format!("{}", done).contains("1 row left"));
+    }
+
+    #[tokio::test]
+    async fn decode_invalid_status_errors() {
+        let mut buf = BytesMut::new();
+        // bit 3 (0b1000 = 8) is reserved/undefined and rejected by BitFlags
+        buf.put_u16_le(0b1000);
+        buf.put_u16_le(0);
+        buf.put_u64_le(0);
+
+        let err = TokenDone::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("invalid status must fail");
+
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[test]
+    fn encode_writes_token_type_and_fields() {
+        let done = TokenDone::default();
+        let mut buf = BytesMut::new();
+        done.encode(&mut buf).unwrap();
+
+        assert_eq!(buf[0], TokenType::Done as u8);
+        // status(2) + cur_cmd(2) + done_rows(8) after the 1-byte token type
+        assert_eq!(buf.len(), 1 + 2 + 2 + 8);
+    }
+}
