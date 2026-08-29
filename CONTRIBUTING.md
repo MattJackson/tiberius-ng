@@ -156,6 +156,9 @@ Policy (see `deny.toml`):
 - **bans** — duplicate versions are a warning, not a hard failure.
 - **sources** — only crates.io is allowed; unknown registries and git sources
   are denied.
+- **licenses** — only permissive licenses compatible with `MIT OR Apache-2.0`
+  are allowed (see the `allow` list in `deny.toml`); a copyleft license entering
+  the graph fails the check.
 
 If your change pulls in a new dependency, run the check locally first. Prefer not
 adding dependencies to the default feature set unless necessary.

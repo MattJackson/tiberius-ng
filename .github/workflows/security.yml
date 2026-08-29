@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   cargo-deny:
-    name: cargo-deny (advisories, bans, sources)
+    name: cargo-deny (advisories, bans, sources, licenses)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -27,4 +27,4 @@ jobs:
       # advisory-db entries (e.g. RUSTSEC-2026-0066).
       - uses: taiki-e/install-action@cargo-deny
       - name: cargo-deny
-        run: cargo deny check advisories bans sources
+        run: cargo deny check advisories bans sources licenses
