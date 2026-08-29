@@ -4,7 +4,7 @@ use crate::{
     tds::codec::{
         TokenColInfo, TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenFeatureExtAck,
         TokenFedAuthInfo, TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow,
-        TokenSessionState,
+        TokenSessionState, TokenTabName,
     },
     Error, SqlReadBytes, TokenType,
 };
@@ -27,6 +27,7 @@ pub enum ReceivedToken {
     ReturnValue(TokenReturnValue),
     Order(TokenOrder),
     ColInfo(TokenColInfo),
+    TabName(TokenTabName),
     EnvChange(TokenEnvChange),
     Info(TokenInfo),
     LoginAck(TokenLoginAck),
@@ -185,6 +186,12 @@ where
         Ok(ReceivedToken::ColInfo(col_info))
     }
 
+    async fn get_tab_name(&mut self) -> crate::Result<ReceivedToken> {
+        let tab_name = TokenTabName::decode(self.conn).await?;
+        event!(Level::TRACE, message = ?tab_name);
+        Ok(ReceivedToken::TabName(tab_name))
+    }
+
     async fn get_done_value(&mut self) -> crate::Result<ReceivedToken> {
         let done = TokenDone::decode(self.conn).await?;
         event!(Level::TRACE, "{}", done);
@@ -298,6 +305,7 @@ where
                 TokenType::Error => this.get_error().await?,
                 TokenType::Order => this.get_order().await?,
                 TokenType::ColInfo => this.get_col_info().await?,
+                TokenType::TabName => this.get_tab_name().await?,
                 TokenType::EnvChange => this.get_env_change().await?,
                 TokenType::Info => this.get_info().await?,
                 TokenType::LoginAck => this.get_login_ack().await?,
