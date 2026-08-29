@@ -218,7 +218,7 @@ mod tests {
         use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
         // No COLMETADATA has been seen, so last_meta() is None: decoding a ROW
         // must be a protocol error rather than an unwrap() panic.
-        let mut buf = BytesMut::new();
+        let buf = BytesMut::new();
         let err = TokenRow::decode(&mut buf.into_sql_read_bytes())
             .await
             .expect_err("ROW before COLMETADATA must error");
