@@ -394,30 +394,92 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
     }
 }
 
-/* TODO
 #[cfg(test)]
 mod tests {
-    use futures_state_stream::StateStream;
-    use tokio::executor::current_thread;
-    use crate::tests::new_connection;
+    use super::*;
 
     #[test]
-    fn select_nvarchar_collation_test() {
-        let c1 = new_connection();
-        let query = c1.simple_query(
-            "select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))",
-        );
-        let mut i = 0;
-        {
-            let future = query.for_each(|x| {
-                let val: &str = x.get(0);
-                assert_eq!(val, "cześć");
-                i += 1;
-                Ok(())
-            });
-            current_thread::block_on_all(future).unwrap();
-        }
-        assert_eq!(i, 1);
+    fn accessors_split_info_and_sort_id() {
+        // info holds LCID in the low 16 bits plus flags/version in the high bits.
+        let collation = Collation::new(0x0020_0409, 52);
+        assert_eq!(collation.info(), 0x0020_0409);
+        assert_eq!(collation.lcid(), 0x0409);
+        assert_eq!(collation.sort_id(), 52);
+    }
+
+    #[test]
+    fn encoding_from_lcid_when_sort_id_zero() {
+        // sort_id == 0 -> resolve via the LCID.
+        let collation = Collation::new(0x0409, 0);
+        let encoding = collation.encoding().expect("known LCID must resolve");
+        assert_eq!(encoding, encoding_rs::WINDOWS_1252);
+    }
+
+    #[test]
+    fn encoding_from_sort_id_when_present() {
+        // A non-zero sort_id takes precedence over the LCID.
+        let collation = Collation::new(0x0405, 80);
+        let encoding = collation.encoding().expect("known sort id must resolve");
+        assert_eq!(encoding, encoding_rs::WINDOWS_1250);
+    }
+
+    #[test]
+    fn encoding_unknown_lcid_errors() {
+        let collation = Collation::new(0xFFFF, 0);
+        let err = collation.encoding().unwrap_err();
+        assert!(matches!(err, Error::Encoding(_)));
+    }
+
+    #[test]
+    fn encoding_unknown_sort_id_errors() {
+        let collation = Collation::new(0x0409, 250);
+        assert!(collation.encoding().is_err());
+    }
+
+    #[test]
+    fn display_uses_encoding_name() {
+        let collation = Collation::new(0x0409, 0);
+        assert_eq!(format!("{}", collation), encoding_rs::WINDOWS_1252.name());
+    }
+
+    #[test]
+    fn display_falls_back_to_none_on_unknown() {
+        let collation = Collation::new(0xFFFF, 0);
+        assert_eq!(format!("{}", collation), "None");
+    }
+
+    #[test]
+    fn lcid_to_encoding_known_and_unknown() {
+        assert_eq!(lcid_to_encoding(0x0401), Some(encoding_rs::WINDOWS_1256));
+        assert_eq!(lcid_to_encoding(0x0404), Some(encoding_rs::BIG5));
+        assert_eq!(lcid_to_encoding(0x0411), Some(encoding_rs::SHIFT_JIS));
+        assert_eq!(lcid_to_encoding(0x0412), Some(encoding_rs::EUC_KR));
+        assert_eq!(lcid_to_encoding(0x0804), Some(encoding_rs::GB18030));
+        assert_eq!(lcid_to_encoding(0x0439), Some(encoding_rs::UTF_16LE));
+        assert_eq!(lcid_to_encoding(0x041e), Some(encoding_rs::WINDOWS_874));
+        assert_eq!(lcid_to_encoding(0x0000), None);
+    }
+
+    #[test]
+    fn sortid_to_encoding_known_and_unknown() {
+        assert_eq!(sortid_to_encoding(50), Some(encoding_rs::WINDOWS_1252));
+        assert_eq!(sortid_to_encoding(80), Some(encoding_rs::WINDOWS_1250));
+        assert_eq!(sortid_to_encoding(104), Some(encoding_rs::WINDOWS_1251));
+        assert_eq!(sortid_to_encoding(112), Some(encoding_rs::WINDOWS_1253));
+        assert_eq!(sortid_to_encoding(192), Some(encoding_rs::SHIFT_JIS));
+        assert_eq!(sortid_to_encoding(194), Some(encoding_rs::EUC_KR));
+        assert_eq!(sortid_to_encoding(196), Some(encoding_rs::BIG5));
+        assert_eq!(sortid_to_encoding(198), Some(encoding_rs::GB18030));
+        assert_eq!(sortid_to_encoding(204), Some(encoding_rs::WINDOWS_874));
+        assert_eq!(sortid_to_encoding(0), None);
+        assert_eq!(sortid_to_encoding(255), None);
+    }
+
+    #[test]
+    fn derives_eq_and_copy() {
+        let a = Collation::new(0x0409, 0);
+        let b = a;
+        assert_eq!(a, b);
+        assert_ne!(a, Collation::new(0x0409, 1));
     }
 }
-*/

@@ -101,3 +101,41 @@ impl fmt::Display for TokenError {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> TokenError {
+        TokenError {
+            code: 1205,
+            state: 2,
+            class: 13,
+            message: "deadlocked".to_string(),
+            server: "myserver".to_string(),
+            procedure: "myproc".to_string(),
+            line: 42,
+        }
+    }
+
+    #[test]
+    fn accessors() {
+        let e = sample();
+        assert_eq!(e.code(), 1205);
+        assert_eq!(e.state(), 2);
+        assert_eq!(e.class(), 13);
+        assert_eq!(e.message(), "deadlocked");
+        assert_eq!(e.server(), "myserver");
+        assert_eq!(e.procedure(), "myproc");
+        assert_eq!(e.line(), 42);
+    }
+
+    #[test]
+    fn display_contains_all_fields() {
+        let rendered = format!("{}", sample());
+        assert_eq!(
+            rendered,
+            "'deadlocked' on server myserver executing myproc on line 42 (code: 1205, state: 2, class: 13)"
+        );
+    }
+}

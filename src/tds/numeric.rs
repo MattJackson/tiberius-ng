@@ -424,6 +424,110 @@ mod tests {
     }
 
     #[test]
+    fn new_with_scale_accessors() {
+        let n = Numeric::new_with_scale(12345, 3);
+        assert_eq!(n.value(), 12345);
+        assert_eq!(n.scale(), 3);
+        assert_eq!(n.int_part(), 12);
+        assert_eq!(n.dec_part(), 345);
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_with_scale_panics_on_large_scale() {
+        Numeric::new_with_scale(1, 38);
+    }
+
+    #[test]
+    fn precision_with_zero_int_part() {
+        // int_part == 0 -> precision is 1 + scale.
+        let n = Numeric::new_with_scale(5, 2);
+        assert_eq!(n.int_part(), 0);
+        assert_eq!(n.precision(), 3);
+    }
+
+    #[test]
+    fn precision_scaling_by_length_buckets() {
+        assert_eq!(Numeric::new_with_scale(1, 0).len(), 5);
+        assert_eq!(Numeric::new_with_scale(1_000_000_000, 0).len(), 9);
+        assert_eq!(Numeric::new_with_scale(10i128.pow(19), 0).len(), 13);
+        assert_eq!(Numeric::new_with_scale(10i128.pow(28), 0).len(), 17);
+    }
+
+    #[test]
+    fn display_and_debug() {
+        let n = Numeric::new_with_scale(57705, 2);
+        assert_eq!(format!("{:?}", n), "577.05");
+        assert_eq!(format!("{}", n), "577.05");
+
+        // Negative values format with a single leading sign and an unsigned
+        // fractional part (see #390).
+        let n = Numeric::new_with_scale(-57705, 3);
+        assert_eq!(format!("{}", n), "-57.705");
+
+        // Zero-padded fractional part for small decimals.
+        let n = Numeric::new_with_scale(102, 4);
+        assert_eq!(format!("{}", n), "0.0102");
+    }
+
+    #[test]
+    fn from_numeric_conversions() {
+        let n = Numeric::new_with_scale(57705, 2);
+        assert_eq!(i128::from(n), 577);
+        assert_eq!(u128::from(n), 577);
+        assert!((f64::from(n) - 577.05).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn eq_across_scales_negative() {
+        assert_eq!(
+            Numeric::new_with_scale(-100501, 2),
+            Numeric::new_with_scale(-1005010, 3),
+        );
+    }
+
+    async fn round_trip(value: i128, scale: u8) {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        let n = Numeric::new_with_scale(value, scale);
+        let mut buf = BytesMut::new();
+        n.encode(&mut buf).expect("encode must succeed");
+
+        let decoded = Numeric::decode(&mut buf.into_sql_read_bytes(), scale)
+            .await
+            .expect("decode must succeed")
+            .expect("value must be present");
+
+        assert_eq!(decoded, n);
+        assert_eq!(decoded.value(), value);
+    }
+
+    #[tokio::test]
+    async fn encode_decode_round_trip() {
+        round_trip(0, 0).await; // len 5
+        round_trip(42, 0).await; // len 5
+        round_trip(-42, 2).await; // negative, len 5
+        round_trip(10i128.pow(12), 0).await; // len 9
+        round_trip(10i128.pow(20), 0).await; // len 13
+        round_trip(-(10i128.pow(20)), 3).await; // negative, len 13
+        round_trip(10i128.pow(30), 0).await; // len 17
+    }
+
+    #[tokio::test]
+    async fn decode_zero_length_is_none() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        let mut buf = BytesMut::new();
+        buf.put_u8(0);
+
+        let decoded = Numeric::decode(&mut buf.into_sql_read_bytes(), 0)
+            .await
+            .expect("decode must succeed");
+
+        assert!(decoded.is_none());
+    }
+
+    #[test]
     #[cfg(feature = "bigdecimal")]
     fn no_overflowing_pow() {
         use crate::{ColumnData, ToSql};

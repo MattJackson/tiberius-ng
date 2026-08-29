@@ -241,3 +241,88 @@ from_sql!(
             from_sec_fragments(dt.seconds_fragments as i64)
         ))
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FromSql, IntoSql};
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn naive_date_round_trip() {
+        let date = NaiveDate::from_ymd_opt(2021, 6, 15).unwrap();
+        let cd: ColumnData<'static> = date.into_sql();
+        assert!(matches!(cd, ColumnData::Date(Some(_))));
+        assert_eq!(NaiveDate::from_sql(&cd).unwrap(), Some(date));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn naive_time_round_trip() {
+        let time = NaiveTime::from_hms_opt(13, 37, 42).unwrap();
+        let cd: ColumnData<'static> = time.into_sql();
+        assert!(matches!(cd, ColumnData::Time(Some(_))));
+        assert_eq!(NaiveTime::from_sql(&cd).unwrap(), Some(time));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn naive_datetime_round_trip() {
+        let dt = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
+            NaiveTime::from_hms_opt(23, 59, 58).unwrap(),
+        );
+        let cd: ColumnData<'static> = dt.into_sql();
+        assert!(matches!(cd, ColumnData::DateTime2(Some(_))));
+        assert_eq!(NaiveDateTime::from_sql(&cd).unwrap(), Some(dt));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn datetime_utc_round_trip() {
+        let naive = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2015, 3, 4).unwrap(),
+            NaiveTime::from_hms_opt(1, 2, 3).unwrap(),
+        );
+        let dt = chrono::DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
+        let cd: ColumnData<'static> = dt.into_sql();
+        assert!(matches!(cd, ColumnData::DateTime2(Some(_))));
+        assert_eq!(chrono::DateTime::<Utc>::from_sql(&cd).unwrap(), Some(dt));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn datetime_fixed_offset_round_trip() {
+        let offset = FixedOffset::east_opt(2 * 3600).unwrap();
+        let naive = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2015, 3, 4).unwrap(),
+            NaiveTime::from_hms_opt(1, 2, 3).unwrap(),
+        );
+        let dt = chrono::DateTime::from_naive_utc_and_offset(naive, offset);
+        let cd: ColumnData<'static> = dt.into_sql();
+        assert!(matches!(cd, ColumnData::DateTimeOffset(Some(_))));
+        assert_eq!(
+            chrono::DateTime::<FixedOffset>::from_sql(&cd).unwrap(),
+            Some(dt)
+        );
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn null_maps_to_none() {
+        assert_eq!(NaiveDate::from_sql(&ColumnData::Date(None)).unwrap(), None);
+        assert_eq!(NaiveTime::from_sql(&ColumnData::Time(None)).unwrap(), None);
+    }
+
+    #[cfg(not(feature = "tds73"))]
+    #[test]
+    fn naive_datetime_round_trip_legacy() {
+        let dt = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(1990, 1, 1).unwrap(),
+            NaiveTime::from_hms_opt(12, 0, 0).unwrap(),
+        );
+        let cd: ColumnData<'static> = dt.into_sql();
+        assert!(matches!(cd, ColumnData::DateTime(Some(_))));
+        assert_eq!(NaiveDateTime::from_sql(&cd).unwrap(), Some(dt));
+    }
+}
