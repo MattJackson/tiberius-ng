@@ -269,6 +269,10 @@ where
                 TokenType::Sspi => this.get_sspi().await?,
                 TokenType::SessionState => this.get_session_state().await?,
                 TokenType::FeatureExtAck => this.get_feature_ext_ack().await?,
+                // Defensive fallback for any token type without a dedicated
+                // handler. Currently every variant is handled, so this is
+                // unreachable, but it is kept as new token types are added.
+                #[allow(unreachable_patterns)]
                 _ => {
                     return Err(Error::Protocol(
                         format!("Token {:?} unimplemented!", ty).into(),
