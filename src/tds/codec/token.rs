@@ -1,3 +1,4 @@
+mod token_col_info;
 mod token_col_metadata;
 mod token_done;
 mod token_env_change;
@@ -11,6 +12,7 @@ mod token_row;
 mod token_sspi;
 mod token_type;
 
+pub use token_col_info::*;
 pub use token_col_metadata::*;
 pub use token_done::*;
 pub use token_env_change::*;
