@@ -16,6 +16,7 @@ name = "tiberius-ng"
 readme = "README.md"
 repository = "https://github.com/MattJackson/tiberius-ng"
 homepage = "https://github.com/MattJackson/tiberius-ng"
+rust-version = "1.88"
 version = "0.13.0"
 
 # The published package is `tiberius-ng` (the crates.io name `tiberius` is owned
