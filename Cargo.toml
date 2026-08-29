@@ -52,6 +52,10 @@ path = "tests/serde.rs"
 name = "serde"
 required-features = ["serde"]
 
+[[example]]
+name = "named-pipes"
+path = "examples/named-pipes.rs"
+
 [dependencies]
 enumflags2 = "0.7"
 byteorder = "1.0"
