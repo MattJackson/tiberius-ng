@@ -1,0 +1,16 @@
+# Coverage is generated from the integration suite, which needs a live SQL
+# Server, so it can move around between runs. Keep it informational rather than
+# a hard gate, so a coverage dip never red-walls an otherwise-passing PR.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+        target: auto
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  require_changes: false
