@@ -1,4 +1,0 @@
-# Auto-union additive merges for append-only enum/module-list files during the
-# TDS-compliance merge batch (safe: these contain only variant/module lines).
-src/tds/codec/token/token_type.rs merge=union
-src/tds/codec/token.rs merge=union
