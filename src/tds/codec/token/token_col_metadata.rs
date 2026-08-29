@@ -106,6 +106,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 _ => unreachable!(),
             },
             TypeInfo::Xml { .. } => write!(f, "xml")?,
+            TypeInfo::Udt(info) => write!(f, "{}.{}", info.schema_name, info.type_name)?,
         }
 
         Ok(())
@@ -204,6 +205,7 @@ impl BaseMetaDataColumn {
                 VarLenType::SSVariant => todo!(),
             },
             TypeInfo::Xml { .. } => ColumnData::Xml(None),
+            TypeInfo::Udt(_) => ColumnData::Binary(None),
         }
     }
 }

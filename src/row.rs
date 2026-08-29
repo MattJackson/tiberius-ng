@@ -192,6 +192,7 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::SSVariant => Self::SSVariant,
             },
             TypeInfo::Xml { .. } => Self::Xml,
+            TypeInfo::Udt(_) => Self::Udt,
         }
     }
 }
