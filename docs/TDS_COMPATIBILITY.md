@@ -12,9 +12,9 @@ Legend: ✅ full · 🟡 partial · ❌ missing · N/A not applicable.
 | TDS version | SQL Server | Rating | Notes |
 |---|---|---|---|
 | **8.0** | 2022 | ✅ Full | TLS-before-prelogin "strict" mode (`EncryptionLevel::Strict`), `tds/8.0` ALPN, and client-certificate (mutual-TLS) login on native-tls + rustls. 8.0 reuses 7.4 tokens over mandatory TLS; the only backend caveat is that opentls cannot advertise ALPN (see below). |
-| **7.4** | 2012–2019 | ✅ Full | Login (`FeatureLevel::SqlServerN`), routing ENVCHANGE, `fReadOnlyIntent`, FedAuth prelogin option + FeatureExt, FEATUREEXTACK. Optional extensions not implemented: FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4) / session recovery — neither is required for normal operation. |
+| **7.4** | 2012–2019 | ✅ Full | Login (`FeatureLevel::SqlServerN`), routing ENVCHANGE, `fReadOnlyIntent`, FedAuth prelogin option + FeatureExt, FEATUREEXTACK, FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4). The only deferral is *transparent reconnect* — SESSIONSTATE is decoded and stored, but not yet replayed to silently re-establish a dropped session. |
 | **7.3 A/B** | 2008 / R2 | ✅ Full (`tds73`) | date / time / datetime2 / datetimeoffset types, NBCROW. |
-| **7.2** | 2005 | ✅ Full | PLP / varchar(max), XML, MARS / transaction-descriptor headers, SQL_VARIANT read. UDT (0xF0) values are not decoded (niche CLR type). |
+| **7.2** | 2005 | ✅ Full | PLP / varchar(max), XML, MARS / transaction-descriptor headers, SQL_VARIANT (read + write), UDT (0xF0) raw-value decode. |
 | **7.1** | 2000 | ✅ Full | Collation, UCS-2 strings, `n`-prefixed var-len types, LOGIN7 layout. |
 | **7.0** | 7.0 | ❌ None | Legacy fixed non-nullable types unsupported; the client only negotiates 7.4. Not a target. |
 
@@ -24,10 +24,12 @@ MS-TDS and are a separate protocol lineage, out of scope for this driver.
 TDS 8.0 has no distinct LOGIN7 version — it reuses 7.4 tokens over mandatory
 TLS, so "8.0" is a transport/ALPN distinction.
 
-**Summary:** TDS 7.1 through 8.0 are fully supported. The only unimplemented
-elements are optional, rarely-used extensions (session recovery, federated-auth
-info tokens, CLR UDTs) that no standard query, bulk-load, RPC, or transaction
-path depends on.
+**Summary:** TDS 7.1 through 8.0 are fully supported. The only remaining
+elements are optional and rarely used: transparent session recovery (the
+SESSIONSTATE token is decoded and stored, just not replayed on reconnect),
+CLR UDT *object* deserialization (raw bytes are surfaced), and `tds/8.0` ALPN
+on the opentls backend (an upstream-crate limitation) — none of which any
+standard query, bulk-load, RPC, or transaction path depends on.
 
 ## Feature matrix
 
@@ -54,7 +56,8 @@ path depends on.
 | ALTMETADATA / ALTROW (compute-by) | ✅ |
 | COLINFO (0xA5) | ✅ |
 | TABNAME (0xA4) | ✅ |
-| FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4) | ❌ (optional; session recovery not implemented) |
+| FEDAUTHINFO (0xEE) | ✅ (STSURL + SPN surfaced for AAD flows) |
+| SESSIONSTATE (0xE4) | ✅ decoded + stored (transparent-reconnect replay not yet implemented) |
 
 ### Data types
 | Type | Status |
@@ -65,8 +68,8 @@ path depends on.
 | PLP (max types), XML | ✅ |
 | date / time / datetime2 / datetimeoffset (7.3) | ✅ (`tds73`) |
 | Numeric / Decimal (incl. automatic scale rescaling of params) | ✅ |
-| SQL_VARIANT (0x62) | 🟡 read ✅; write (sending a `sql_variant` param) not supported |
-| UDT (0xF0) | ❌ (niche CLR type) |
+| SQL_VARIANT (0x62) | ✅ read + write |
+| UDT (0xF0) | ✅ raw-value decode (surfaced as bytes; CLR object deserialization out of scope) |
 
 ### Encryption & auth
 | Feature | Status |
@@ -85,11 +88,11 @@ path depends on.
 None of the following block standard operation; they are tracked for
 completeness and would be additive, backward-compatible features:
 
-- **FEDAUTHINFO (0xEE) + SESSIONSTATE (0xE4) / session recovery** — connection
-  resiliency for federated-auth and idle reconnect scenarios.
-- **SQL_VARIANT write** — reading `sql_variant` columns works; sending one as a
-  parameter does not.
-- **UDT (0xF0)** — CLR user-defined types.
-- **opentls `tds/8.0` ALPN** — a limitation of the opentls backend; use
-  native-tls or rustls for TDS 8.0 strict mode.
-</content>
+- **Transparent session recovery** — the SESSIONSTATE token is already decoded
+  and stored; replaying it to silently re-establish a dropped connection is the
+  remaining step.
+- **CLR UDT object deserialization** — UDT values are decoded to raw bytes;
+  interpreting them into CLR objects (e.g. `geometry`) is left to the caller.
+- **opentls `tds/8.0` ALPN** — verified infeasible with `opentls` 0.2.1's public
+  API (no ALPN setter; the wrapped `SslConnector` is private). Use native-tls or
+  rustls for TDS 8.0 strict mode. Tracked upstream against the `opentls` crate.

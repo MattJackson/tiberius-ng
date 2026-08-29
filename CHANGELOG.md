@@ -66,8 +66,8 @@ long-standing bug reports, and substantially extends TDS protocol coverage
   with the `tds/8.0` ALPN), plus `Config::hostname_in_certificate()` and
   `Config::client_name()`. Adapted from #413 by [@olback](https://github.com/olback).
   Fixes #412, #340, #414, #224.
-- **SQL_VARIANT** decoding — previously panicked (`todo!()`). Fixes the read path
-  for `sql_variant` columns.
+- **SQL_VARIANT** reading (previously panicked, `todo!()`) and writing — full
+  `sql_variant` parameter support, symmetric with the decoder.
 - **CLR UDT**, **COLINFO**, **TABNAME**, **FEDAUTHINFO**, **SESSIONSTATE**, and
   **ALTMETADATA/ALTROW** (`COMPUTE BY`) token support.
 - **Transaction Manager requests** (begin/commit/rollback) and the **Attention**
@@ -114,6 +114,9 @@ long-standing bug reports, and substantially extends TDS protocol coverage
 - Send the ReadOnly intent flag in LOGIN7 when `ApplicationIntent=ReadOnly` (#348).
 - Fix the sign/padding of negative `Numeric` string formatting. From #390 by
   [@zuckschwerdt](https://github.com/zuckschwerdt). Fixes #368.
+- Rescale `numeric`/`decimal` parameters to the target column scale (overflow-
+  checked scale-up, round-half-away-from-zero scale-down) instead of panicking
+  on a scale mismatch.
 - Allow querying columns whose names are keywords such as `End` (#388, from
   [@cjordan](https://github.com/cjordan)).
 - Improve `QueryStream::into_results` handling of empty results (#385, fixes #380);
@@ -126,10 +129,14 @@ long-standing bug reports, and substantially extends TDS protocol coverage
 - Rebranded to the maintained fork (`tiberius-ng` 0.13.0); repository, docs.rs,
   badges and metadata now point at
   [MattJackson/tiberius-ng](https://github.com/MattJackson/tiberius-ng).
-- Modernized the GitHub Actions workflows (SHA-pinned actions, multi-OS matrix);
-  replaced the broken upstream security workflow; added Dependabot, issue/PR
-  templates, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`, and a
-  `dev → qa → main` branch lifecycle.
+- Modernized the GitHub Actions workflows (SHA-pinned actions); replaced the
+  broken upstream security workflow; added Dependabot, issue/PR templates,
+  `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, and `SECURITY.md`.
+- Restructured CI around the `dev → qa → main` lifecycle: a fast lane on
+  PRs/`dev` (lint, unit tests, one integration smoke) and the full UAT matrix on
+  `qa` — SQL Server 2017/2019/2022/**2025** and Azure SQL Edge across every
+  feature combination, plus Windows and macOS. Added a tag-triggered release
+  workflow (verify → publish to crates.io → GitHub release) and Codecov coverage.
 - Fixed the docs.rs build (use the `docsrs` cfg instead of a nightly-only `docs`
   feature) and cleared all `clippy -D warnings`.
 - Modernized dependencies and added ~90 unit tests, roughly doubling coverage.
