@@ -176,9 +176,18 @@ export TIBERIUS_TEST_CONNECTION_STRING="server=tcp:localhost,1433;user=SA;passwo
 cargo test --features all
 ```
 
-CI exercises the integration suite against a matrix of SQL Server 2017/2019/2022
-and Azure SQL Edge on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for the `dev → qa → main` workflow.
+CI follows the `dev → qa → main` lifecycle:
+
+- **PRs and `dev`** run a fast lane — lint, unit tests, and one integration smoke
+  (SQL Server 2022) — so day-to-day iteration stays quick.
+- **`qa`** runs the full UAT: the integration suite against SQL Server
+  2017 / 2019 / 2022 / 2025 and Azure SQL Edge across every feature combination,
+  plus Windows (integrated auth) and macOS builds. A green `qa` means the release
+  is ready.
+- **`main`** is a fast promotion from an already-green `qa`; tagging `v*` triggers
+  the release workflow (verify → publish to crates.io → GitHub release).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Contributing
 

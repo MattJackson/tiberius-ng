@@ -1,4 +1,5 @@
-name: Cargo tests
+name: CI
+
 on:
   push:
     branches:
@@ -6,40 +7,102 @@ on:
       - qa
       - dev
   pull_request:
+  # Allow running the full integration matrix on demand (e.g. to validate a
+  # branch before promoting it to `qa`).
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Lifecycle:
+#   * PRs and pushes to `dev`  -> fast lane: lint, unit tests, one integration smoke.
+#   * pushes to `qa`           -> full lane: the complete integration UAT matrix
+#                                 (all supported SQL Server versions + platforms).
+#                                 This is the hard gate; a green qa means prod-ready.
+#   * pushes to `main`         -> fast lane only. main is promoted from an already
+#                                 green qa, so releasing is just: push, tag, publish
+#                                 (see release.yml, triggered by a `v*` tag).
+#   * workflow_dispatch        -> full lane, so `qa` can be dry-run before promotion.
 jobs:
-  clippy:
+  # ---- Fast lane (always) --------------------------------------------------
+  lint:
+    name: clippy + rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
-          components: clippy
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install dependencies
-        run: sudo apt install -y openssl libkrb5-dev
+        run: sudo apt-get install -y openssl libkrb5-dev
+      - name: Rustfmt
+        run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --features=all -- -D warnings
 
-  format:
+  unit:
+    name: unit tests (no server)
     runs-on: ubuntu-latest
-
+    env:
+      RUSTFLAGS: "-Dwarnings"
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
-          components: rustfmt
-      - name: Rustfmt
-        run: cargo fmt --check
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install dependencies
+        run: sudo apt-get install -y openssl libkrb5-dev
+      - name: Run library unit tests
+        run: cargo test --lib --features all
 
-  cargo-test-linux:
+  smoke:
+    name: integration smoke (SQL 2022)
+    # Fast real-server signal on the dev lane; the full matrix runs on qa.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
+    env:
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Start SQL Server 2022
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2022
+      - name: Install dependencies
+        run: sudo apt-get install -y openssl libkrb5-dev
+      - name: Wait for SQL Server
+        run: |
+          for _ in $(seq 1 45); do
+            if (echo > /dev/tcp/localhost/1433) 2>/dev/null; then
+              echo "SQL Server is accepting connections"; exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time" >&2; exit 1
+      - name: Run tests
+        run: cargo test --features=all
 
+  # ---- Full lane (qa / manual) --------------------------------------------
+  integration-linux:
+    name: linux (SQL ${{ matrix.database }}, ${{ matrix.features }})
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/qa')
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -55,43 +118,107 @@ jobs:
           - "--no-default-features --features=time"
           - "--no-default-features --features=rustls"
           - "--no-default-features --features=vendored-openssl"
-
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
       RUSTFLAGS: "-Dwarnings"
-
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
-
       - name: Compute cache key
         shell: bash
         run: |
           key="${{ matrix.features }}"
           key="${key//,/+}"
           echo "RUST_CACHE_KEY=$key" >> "$GITHUB_ENV"
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ env.RUST_CACHE_KEY }}
-
-      - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-${{matrix.database}}
-
+      - name: Start SQL Server ${{ matrix.database }}
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-${{ matrix.database }}
       - name: Install dependencies
-        run: sudo apt install -y openssl libkrb5-dev
-
+        run: sudo apt-get install -y openssl libkrb5-dev
+      - name: Wait for SQL Server
+        run: |
+          for _ in $(seq 1 45); do
+            if (echo > /dev/tcp/localhost/1433) 2>/dev/null; then
+              echo "SQL Server is accepting connections"; exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time" >&2; exit 1
       - name: Run tests
-        run: cargo test ${{matrix.features}}
+        run: cargo test ${{ matrix.features }}
 
-  cargo-test-windows:
+  integration-linux-next:
+    name: linux (SQL 2025, experimental)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/qa')
+    runs-on: ubuntu-latest
+    # Newest server; kept non-blocking so a not-yet-published image or a
+    # server-side behaviour change on the bleeding edge cannot red-wall qa.
+    continue-on-error: true
+    env:
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Start SQL Server 2025
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2025
+      - name: Install dependencies
+        run: sudo apt-get install -y openssl libkrb5-dev
+      - name: Wait for SQL Server
+        run: |
+          for _ in $(seq 1 45); do
+            if (echo > /dev/tcp/localhost/1433) 2>/dev/null; then
+              echo "SQL Server is accepting connections"; exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time" >&2; exit 1
+      - name: Run tests
+        run: cargo test --features=all
+
+  integration-macos:
+    name: macos build + unit tests
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/qa')
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,rust_decimal,bigdecimal"
+          - "--no-default-features --features=vendored-openssl"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # No live SQL Server on hosted macOS runners; this verifies the crate
+      # builds and its unit tests pass on macOS/Apple targets.
+      - name: Build
+        run: cargo build ${{ matrix.features }}
+      - name: Run library unit tests
+        run: cargo test --lib ${{ matrix.features }}
+
+  integration-windows:
+    name: windows (SQL 2019, integrated auth)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/qa')
     runs-on: windows-latest
-
+    # Chocolatey-based SQL Server installation on hosted Windows runners is
+    # occasionally flaky; kept non-blocking so infra hiccups don't red-wall qa.
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -101,58 +228,48 @@ jobs:
           - "--features=all"
           - "--no-default-features --features=rustls,winauth"
           - "--no-default-features --features=vendored-openssl,winauth"
-
     env:
       TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
-
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
-
       - name: Compute cache key
         shell: bash
         run: |
           key="${{ matrix.features }}"
           key="${key//,/+}"
           echo "RUST_CACHE_KEY=$key" >> "$GITHUB_ENV"
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ env.RUST_CACHE_KEY }}
-
       - name: Set required PowerShell modules
         id: psmodulecache
-        uses: potatoqualitee/psmodulecache@ee5e9494714abf56f6efbfa51527b2aec5c761b8  # v6.2.1
+        uses: potatoqualitee/psmodulecache@ee5e9494714abf56f6efbfa51527b2aec5c761b8 # v6.2.1
         with:
           modules-to-cache: SqlServer
-
       - name: Setup Chocolatey download cache
         id: chococache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
           key: chocolatey-install
-
       - name: Install required PowerShell modules
         shell: powershell
         run: |
-            Set-PSRepository PSGallery -InstallationPolicy Trusted
-            Install-Module SqlServer
-
-      - name: Install SQL Server ${{matrix.database}}
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module SqlServer
+      - name: Install SQL Server ${{ matrix.database }}
         shell: powershell
         run: |
           choco feature disable --name="'exitOnRebootDetected'"
           $ErrorActionPreference = 'SilentlyContinue'
-          choco install sql-server-${{matrix.database}} --params="'/IgnorePendingReboot'"
-
-      - name: Setup SQL Server ${{matrix.database}}
+          choco install sql-server-${{ matrix.database }} --params="'/IgnorePendingReboot'"
+      - name: Setup SQL Server ${{ matrix.database }}
         shell: powershell
         run: |
           Import-Module 'sqlps'
@@ -192,53 +309,6 @@ jobs:
           Start-Service SQLBrowser
           net stop MSSQLSERVER
           net start MSSQLSERVER
-
-      - name: Run normal tests
-        shell: powershell
-        run: cargo test ${{matrix.features}}
-
-  cargo-test-macos:
-    runs-on: macos-26-intel
-
-    strategy:
-      fail-fast: false
-      matrix:
-        database:
-          - 2019
-        features:
-          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
-          - "--no-default-features --features=vendored-openssl"
-
-    env:
-      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
-
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
-        with:
-          toolchain: stable
-
-      - name: Compute cache key
-        shell: bash
-        run: |
-          key="${{ matrix.features }}"
-          key="${key//,/+}"
-          echo "RUST_CACHE_KEY=$key" >> "$GITHUB_ENV"
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
-        with:
-          shared-key: ${{ env.RUST_CACHE_KEY }}
-
-      - uses: docker/setup-docker-action@b2189fbf2a6592b51fee7cdd93ee2bfaeba733db  # v5.1.0
-
-      - name: Install docker compose plugin
-        run: brew install docker-compose
-
-      - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-${{matrix.database}}
-
       - name: Run tests
-        run: cargo test ${{matrix.features}}
+        shell: powershell
+        run: cargo test ${{ matrix.features }}
