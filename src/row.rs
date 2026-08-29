@@ -256,10 +256,17 @@ pub struct Row {
     pub(crate) result_index: usize,
 }
 
+/// A type that can address a column within a [`Row`], either by its zero-based
+/// position (`usize`) or by name (`&str`).
+///
+/// Implement this for a custom column identifier (for example a generated
+/// column-name enum) to index rows with it via [`Row::get`]/[`Row::try_get`].
 pub trait QueryIdx
 where
     Self: Display,
 {
+    /// Resolves this index to the column's zero-based position in `row`, or
+    /// `None` if it does not name/point to a column in the row.
     fn idx(&self, row: &Row) -> Option<usize>;
 }
 

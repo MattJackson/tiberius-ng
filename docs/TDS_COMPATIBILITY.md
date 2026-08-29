@@ -36,7 +36,7 @@ standard query, bulk-load, RPC, or transaction path depends on.
 ### Client → server messages
 | Message | Status |
 |---|---|
-| PRELOGIN (0x12) | ✅ (INSTOPT/TRACEID/NONCEOPT decoded; INSTOPT not emitted) |
+| PRELOGIN (0x12) | ✅ (VERSION/ENCRYPTION/INSTOPT/THREADID/MARS emitted; server options decoded and INSTOPT validated) |
 | LOGIN7 (0x10) | ✅ |
 | SQL Batch (0x01) | ✅ |
 | RPC request (0x03) | ✅ by-ID procs and named procs, incl. OUT params and table-valued parameters (#328) |

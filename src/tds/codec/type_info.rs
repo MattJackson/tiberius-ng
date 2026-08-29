@@ -144,7 +144,11 @@ impl Encode<BytesMut> for VarLenContext {
                 dst.put_u32_le(self.len() as u32);
             }
             VarLenType::Xml => (),
-            typ => todo!("encoding {:?} is not supported yet", typ),
+            typ => {
+                return Err(Error::Protocol(
+                    format!("encoding a {typ:?} var-len context is not supported").into(),
+                ))
+            }
         }
 
         if let Some(collation) = self.collation() {

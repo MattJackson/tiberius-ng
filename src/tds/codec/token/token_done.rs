@@ -1,4 +1,4 @@
-use crate::{tds::codec::Encode, Error, SqlReadBytes, TokenType};
+use crate::{tds::codec::Encode, SqlReadBytes, TokenType};
 use asynchronous_codec::BytesMut;
 use bytes::BufMut;
 use enumflags2::{bitflags, BitFlags};
@@ -31,8 +31,11 @@ impl TokenDone {
     where
         R: SqlReadBytes + Unpin,
     {
-        let status = BitFlags::from_bits(src.read_u16_le().await?)
-            .map_err(|_| Error::Protocol("done(variant): invalid status".into()))?;
+        // The DONE Status (MS-TDS §2.2.7.6) is a 2-byte bitmask with reserved
+        // bits that a server (or a future SQL Server / Azure build) may set.
+        // Truncate to the flags we model rather than erroring, matching how
+        // COLMETADATA flags are handled.
+        let status = BitFlags::from_bits_truncate(src.read_u16_le().await?);
 
         let cur_cmd = src.read_u16_le().await?;
         let done_row_count_bytes = src.context().version().done_row_count_bytes();
@@ -147,18 +150,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn decode_invalid_status_errors() {
+    async fn decode_tolerates_reserved_status_bits() {
         let mut buf = BytesMut::new();
-        // bit 3 (0b1000 = 8) is reserved/undefined and rejected by BitFlags
-        buf.put_u16_le(0b1000);
+        // bit 3 (0b1000 = 8) is reserved/undefined; combined with a real bit
+        // (More = 0b1). We tolerate the reserved bit and keep the modeled one.
+        buf.put_u16_le(0b1001);
         buf.put_u16_le(0);
         buf.put_u64_le(0);
 
-        let err = TokenDone::decode(&mut buf.into_sql_read_bytes())
+        let done = TokenDone::decode(&mut buf.into_sql_read_bytes())
             .await
-            .expect_err("invalid status must fail");
+            .expect("reserved status bits must be tolerated");
 
-        assert!(matches!(err, Error::Protocol(_)));
+        assert!(done.status.contains(DoneStatus::More));
     }
 
     #[test]
