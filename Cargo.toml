@@ -1,19 +1,29 @@
 [package]
 authors = [
+    "Matthew Jackson <dev@getbusbar.com>",
     "Steffen Butzer <steffen.butzer@outlook.com>",
     "Julius de Bruijn <bruijn@prisma.io>",
     "Eric Sheppard <eric@eigenmo.de>",
     "Yoshua Wuyts <yoshuawuyts@gmail.com>",
 ]
-description = "A TDS (MSSQL) driver"
-documentation = "https://docs.rs/tiberius/"
+description = "A TDS (Microsoft SQL Server) driver for Rust — actively-maintained community continuation of tiberius"
+documentation = "https://docs.rs/tiberius-ng/"
 edition = "2021"
-keywords = ["tds", "mssql", "sql"]
-license = "MIT/Apache-2.0"
-name = "tiberius"
+keywords = ["tds", "mssql", "sql", "sqlserver", "database"]
+categories = ["database"]
+license = "MIT OR Apache-2.0"
+name = "tiberius-ng"
 readme = "README.md"
-repository = "https://github.com/prisma/tiberius"
-version = "0.12.3"
+repository = "https://github.com/MattJackson/tiberius"
+homepage = "https://github.com/MattJackson/tiberius"
+version = "0.13.0"
+
+# The published package is `tiberius-ng` (the crates.io name `tiberius` is owned
+# by the original, now-unmaintained project). The library name stays `tiberius`
+# so downstream code keeps `use tiberius::...` — only the Cargo.toml dependency
+# line changes:  tiberius = { package = "tiberius-ng", version = "0.13" }
+[lib]
+name = "tiberius"
 
 [workspace]
 members = ["runtimes-macro"]

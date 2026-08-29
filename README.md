@@ -1,10 +1,47 @@
-# Tiberius
-[![crates.io](https://meritbadge.herokuapp.com/tiberius)](https://crates.io/crates/tiberius)
-[![docs.rs](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)
-[![Cargo tests](https://github.com/prisma/tiberius/actions/workflows/test.yml/badge.svg)](https://github.com/prisma/tiberius/actions/workflows/test.yml)
-[![Chat](https://img.shields.io/discord/664092374359605268)](https://discord.gg/xX4xp9x)
+# Tiberius (tiberius-ng)
+[![crates.io](https://img.shields.io/crates/v/tiberius-ng.svg)](https://crates.io/crates/tiberius-ng)
+[![docs.rs](https://docs.rs/tiberius-ng/badge.svg)](https://docs.rs/tiberius-ng)
+[![Cargo tests](https://github.com/MattJackson/tiberius/actions/workflows/test.yml/badge.svg)](https://github.com/MattJackson/tiberius/actions/workflows/test.yml)
+[![Security audit](https://github.com/MattJackson/tiberius/actions/workflows/security.yml/badge.svg)](https://github.com/MattJackson/tiberius/actions/workflows/security.yml)
 
 A native Microsoft SQL Server (TDS) client for Rust.
+
+> ## ⚑ Actively maintained fork
+>
+> This is a **community continuation of [`tiberius`](https://github.com/prisma/tiberius)**, which
+> the original authors ([Prisma](https://github.com/prisma/tiberius)) no longer maintain. This fork
+> is **maintained full-time** at [**MattJackson/tiberius**](https://github.com/MattJackson/tiberius):
+> we are working through the backlog of open PRs and issues, keeping dependencies current and the
+> crate free of security advisories, and cutting regular releases.
+>
+> Because the `tiberius` name on crates.io belongs to the original project, releases are published
+> under the package name **[`tiberius-ng`](https://crates.io/crates/tiberius-ng)**. The library name
+> is still `tiberius`, so your `use tiberius::…` code does not change — see
+> [Installation](#installation) below. Contributions, bug reports and feature requests are welcome
+> [in the issue tracker](https://github.com/MattJackson/tiberius/issues).
+
+## Installation
+
+Add the dependency under its published name, `tiberius-ng`, while keeping the crate importable as
+`tiberius`:
+
+```toml
+[dependencies]
+tiberius = { package = "tiberius-ng", version = "0.13" }
+```
+
+Your code is unchanged:
+
+```rust
+use tiberius::{Client, Config, AuthMethod};
+```
+
+If you prefer, you can instead depend on it by its real name and import it as `tiberius_ng`:
+
+```toml
+[dependencies]
+tiberius-ng = "0.13"
+```
 
 ### Goals
 
@@ -141,4 +178,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Security
 
-If you have a security issue to report, please contact us at [security@prisma.io](mailto:security@prisma.io?subject=[GitHub]%20Prisma%202%20Security%20Report%20Tiberius)
+Supply-chain security is enforced in CI via [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny)
+(see [`deny.toml`](./deny.toml) and the [Security audit workflow](.github/workflows/security.yml)): any
+vulnerability or yanked crate in the built dependency graph fails the build.
+
+To report a security vulnerability, please use
+[GitHub's private security advisory reporting](https://github.com/MattJackson/tiberius/security/advisories/new)
+for this repository rather than opening a public issue.
