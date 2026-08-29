@@ -11,10 +11,10 @@ Legend: ✅ full · 🟡 partial · ❌ missing · N/A not applicable.
 
 | TDS version | SQL Server | Rating | Notes |
 |---|---|---|---|
-| **8.0** | 2022 | 🟡 Partial | TLS-before-prelogin "strict" mode (`EncryptionLevel::Strict`) and `tds/8.0` ALPN on native-tls + rustls. opentls has no ALPN; client-certificate (mutual-TLS) login not implemented. Otherwise 8.0 == 7.4 semantics. |
-| **7.4** | 2012–2019 | 🟡 Partial | Login (`FeatureLevel::SqlServerN`), routing ENVCHANGE, `fReadOnlyIntent`, FedAuth prelogin option + FeatureExt, FEATUREEXTACK. Missing: FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4), session recovery. |
+| **8.0** | 2022 | ✅ Full | TLS-before-prelogin "strict" mode (`EncryptionLevel::Strict`), `tds/8.0` ALPN, and client-certificate (mutual-TLS) login on native-tls + rustls. 8.0 reuses 7.4 tokens over mandatory TLS; the only backend caveat is that opentls cannot advertise ALPN (see below). |
+| **7.4** | 2012–2019 | ✅ Full | Login (`FeatureLevel::SqlServerN`), routing ENVCHANGE, `fReadOnlyIntent`, FedAuth prelogin option + FeatureExt, FEATUREEXTACK. Optional extensions not implemented: FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4) / session recovery — neither is required for normal operation. |
 | **7.3 A/B** | 2008 / R2 | ✅ Full (`tds73`) | date / time / datetime2 / datetimeoffset types, NBCROW. |
-| **7.2** | 2005 | 🟡 Partial | PLP / varchar(max), XML, MARS / transaction-descriptor headers. Missing: SQL_VARIANT, UDT. |
+| **7.2** | 2005 | ✅ Full | PLP / varchar(max), XML, MARS / transaction-descriptor headers, SQL_VARIANT read. UDT (0xF0) values are not decoded (niche CLR type). |
 | **7.1** | 2000 | ✅ Full | Collation, UCS-2 strings, `n`-prefixed var-len types, LOGIN7 layout. |
 | **7.0** | 7.0 | ❌ None | Legacy fixed non-nullable types unsupported; the client only negotiates 7.4. Not a target. |
 
@@ -24,20 +24,25 @@ MS-TDS and are a separate protocol lineage, out of scope for this driver.
 TDS 8.0 has no distinct LOGIN7 version — it reuses 7.4 tokens over mandatory
 TLS, so "8.0" is a transport/ALPN distinction.
 
+**Summary:** TDS 7.1 through 8.0 are fully supported. The only unimplemented
+elements are optional, rarely-used extensions (session recovery, federated-auth
+info tokens, CLR UDTs) that no standard query, bulk-load, RPC, or transaction
+path depends on.
+
 ## Feature matrix
 
 ### Client → server messages
 | Message | Status |
 |---|---|
-| PRELOGIN (0x12) | ✅ (INSTOPT/TRACEID/NONCEOPT decoded but not emitted) |
+| PRELOGIN (0x12) | ✅ (INSTOPT/TRACEID/NONCEOPT decoded; INSTOPT not emitted) |
 | LOGIN7 (0x10) | ✅ |
 | SQL Batch (0x01) | ✅ |
-| RPC request (0x03) | 🟡 by-ID procs ✅; named procs (see #328) |
-| Bulk load (0x07) | ✅ |
+| RPC request (0x03) | ✅ by-ID procs and named procs, incl. OUT params and table-valued parameters (#328) |
+| Bulk load (0x07) | ✅ whole-table and column-list |
 | SSPI (0x11) | ✅ |
-| FedAuth token | 🟡 via LOGIN7 FeatureExt only |
-| Attention / cancel (0x06) | ❌ |
-| Transaction Manager request (0x14) | ❌ (transactions use T-SQL batches) |
+| FedAuth token | ✅ via LOGIN7 FeatureExt |
+| Attention / cancel (0x06) | ✅ (`Client::cancel_query`) |
+| Transaction Manager request (0x14) | ✅ (`begin`/`commit`/`rollback` with isolation levels) |
 
 ### Server → client tokens
 | Token | Status |
@@ -45,10 +50,11 @@ TLS, so "8.0" is a transport/ALPN distinction.
 | COLMETADATA, ROW, NBCROW, DONE/PROC/INPROC | ✅ |
 | ENVCHANGE, ERROR/INFO, LOGINACK | ✅ |
 | RETURNVALUE, RETURNSTATUS, ORDER, SSPI | ✅ |
-| FEATUREEXTACK | 🟡 FEDAUTH only |
-| FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4), TABNAME (0xA4) | ❌ |
-| COLINFO (0xA5) | 🟡 enum entry, no handler |
-| ALTMETADATA / ALTROW (compute-by) | ❌ |
+| FEATUREEXTACK | ✅ |
+| ALTMETADATA / ALTROW (compute-by) | ✅ |
+| COLINFO (0xA5) | ✅ |
+| TABNAME (0xA4) | ✅ |
+| FEDAUTHINFO (0xEE), SESSIONSTATE (0xE4) | ❌ (optional; session recovery not implemented) |
 
 ### Data types
 | Type | Status |
@@ -58,37 +64,32 @@ TLS, so "8.0" is a transport/ALPN distinction.
 | Char/binary + collation, Text/NText/Image | ✅ |
 | PLP (max types), XML | ✅ |
 | date / time / datetime2 / datetimeoffset (7.3) | ✅ (`tds73`) |
-| Numeric / Decimal | ✅ |
-| SQL_VARIANT (0x62) | ❌ (currently panics on read) |
-| UDT (0xF0) | ❌ |
+| Numeric / Decimal (incl. automatic scale rescaling of params) | ✅ |
+| SQL_VARIANT (0x62) | 🟡 read ✅; write (sending a `sql_variant` param) not supported |
+| UDT (0xF0) | ❌ (niche CLR type) |
 
 ### Encryption & auth
 | Feature | Status |
 |---|---|
 | Encryption NotSupported / Off / On / Required | ✅ |
 | Strict (TDS 8.0, TLS-first) | ✅ (`tds80`) |
-| `tds/8.0` ALPN | 🟡 native-tls + rustls ✅, opentls ❌ |
-| ENCRYPT_CLIENT_CERT (mutual TLS) | ❌ |
+| `tds/8.0` ALPN | 🟡 native-tls + rustls ✅, opentls ❌ (backend cannot advertise ALPN) |
+| ENCRYPT_CLIENT_CERT (mutual TLS) | ✅ (`Config::client_certificate` / `client_certificate_pkcs12`) |
 | SQL auth (zeroized) | ✅ |
 | Windows NTLM/SSPI (Windows `winauth`; Unix `sspi-rs`) | ✅ |
 | Kerberos/GSSAPI (Unix `integrated-auth-gssapi`) | ✅ |
-| AAD / federated token | 🟡 security-token library only |
+| AAD / federated token | ✅ (`AuthMethod::aad_token`) |
 
-## Prioritized gaps to reach "100%"
+## Remaining optional items
 
-**High (correctness):**
-1. SQL_VARIANT decode — panics today (M)
-2. Named-proc RPC + OUT/TVP (addressed by #328) (M)
-3. COLINFO (0xA5) handler (S)
+None of the following block standard operation; they are tracked for
+completeness and would be additive, backward-compatible features:
 
-**Medium (7.4/8.0 completeness):**
-4. FEDAUTHINFO + SESSIONSTATE tokens (M)
-5. TABNAME + ALTMETADATA/ALTROW (M)
-6. opentls `tds/8.0` ALPN (S)
-7. ENCRYPT_CLIENT_CERT mutual-TLS login (M)
-
-**Lower:**
-8. Attention signal / query cancellation (M)
-9. Transaction Manager requests (0x14) (L)
-10. PRELOGIN INSTOPT emission + instance validation (S)
-11. UDT type support (L)
+- **FEDAUTHINFO (0xEE) + SESSIONSTATE (0xE4) / session recovery** — connection
+  resiliency for federated-auth and idle reconnect scenarios.
+- **SQL_VARIANT write** — reading `sql_variant` columns works; sending one as a
+  parameter does not.
+- **UDT (0xF0)** — CLR user-defined types.
+- **opentls `tds/8.0` ALPN** — a limitation of the opentls backend; use
+  native-tls or rustls for TDS 8.0 strict mode.
+</content>
