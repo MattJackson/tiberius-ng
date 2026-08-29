@@ -484,4 +484,43 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn multi_subnet_failover_parsing() -> crate::Result<()> {
+        let test_str = "MultiSubnetFailover=true";
+        let ado: AdoNetConfig = test_str.parse()?;
+        assert!(ado.multi_subnet_failover()?);
+
+        let test_str = "MultiSubnetFailover=yes";
+        let ado: AdoNetConfig = test_str.parse()?;
+        assert!(ado.multi_subnet_failover()?);
+
+        let test_str = "MultiSubnetFailover=false";
+        let ado: AdoNetConfig = test_str.parse()?;
+        assert!(!ado.multi_subnet_failover()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn multi_subnet_failover_parsing_missing() -> crate::Result<()> {
+        let test_str = "";
+        let ado: AdoNetConfig = test_str.parse()?;
+        assert!(!ado.multi_subnet_failover()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn multi_subnet_failover_from_ado_string() -> crate::Result<()> {
+        let config = crate::Config::from_ado_string(
+            "server=tcp:my-server.com,1433;MultiSubnetFailover=true",
+        )?;
+        assert!(config.get_multi_subnet_failover());
+
+        let config = crate::Config::from_ado_string("server=tcp:my-server.com,1433")?;
+        assert!(!config.get_multi_subnet_failover());
+
+        Ok(())
+    }
 }

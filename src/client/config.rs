@@ -32,6 +32,7 @@ pub struct Config {
     pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
     pub(crate) readonly: bool,
+    pub(crate) multi_subnet_failover: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +66,7 @@ impl Default for Config {
             trust: TrustConfig::Default,
             auth: AuthMethod::None,
             readonly: false,
+            multi_subnet_failover: false,
         }
     }
 }
@@ -171,6 +173,24 @@ impl Config {
         self.readonly = readnoly;
     }
 
+    /// Enable multi-subnet failover.
+    ///
+    /// When enabled and the server host name resolves to more than one IP
+    /// address (for example, an Always On availability group listener spread
+    /// across subnets), connections are attempted to all resolved addresses in
+    /// parallel and the first one to succeed is used. This mirrors the ADO.NET
+    /// `MultiSubnetFailover` connection-string keyword.
+    ///
+    /// - Defaults to `false`.
+    pub fn multi_subnet_failover(&mut self, multi_subnet_failover: bool) {
+        self.multi_subnet_failover = multi_subnet_failover;
+    }
+
+    /// Returns whether multi-subnet failover is enabled.
+    pub fn get_multi_subnet_failover(&self) -> bool {
+        self.multi_subnet_failover
+    }
+
     pub(crate) fn get_host(&self) -> &str {
         self.host
             .as_deref()
@@ -212,6 +232,7 @@ impl Config {
     /// |`TrustServerCertificateCA`|`<path>`|Path to a `pem`, `crt` or `der` certificate file. Cannot be used together with `TrustServerCertificate`|
     /// |`encrypt`|`true`,`false`,`yes`,`no`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication.|
     /// |`Application Name`, `ApplicationName`|`<string>`|Sets the application name for the connection.|
+    /// |`MultiSubnetFailover`|`true`,`false`,`yes`,`no`|When enabled, connections are attempted in parallel to all IP addresses the server resolves to, and the first to succeed is used.|
     ///
     /// [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
     pub fn from_ado_string(s: &str) -> crate::Result<Self> {
@@ -268,6 +289,8 @@ impl Config {
         builder.encryption(s.encrypt()?);
 
         builder.readonly(s.readonly());
+
+        builder.multi_subnet_failover(s.multi_subnet_failover()?);
 
         Ok(builder)
     }
@@ -387,5 +410,12 @@ pub(crate) trait ConfigString {
             .get("applicationintent")
             .filter(|val| *val == "ReadOnly")
             .is_some()
+    }
+
+    fn multi_subnet_failover(&self) -> crate::Result<bool> {
+        self.dict()
+            .get("multisubnetfailover")
+            .map(Self::parse_bool)
+            .unwrap_or(Ok(false))
     }
 }
