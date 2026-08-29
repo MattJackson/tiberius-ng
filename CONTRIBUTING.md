@@ -2,7 +2,7 @@
 
 Thanks for your interest in improving Tiberius!
 
-This repository — [`MattJackson/tiberius`](https://github.com/MattJackson/tiberius) —
+This repository — [`MattJackson/tiberius-ng`](https://github.com/MattJackson/tiberius-ng) —
 is an actively-maintained **community fork** of the original
 [`prisma/tiberius`](https://github.com/prisma/tiberius) TDS (Microsoft SQL Server)
 driver for Rust. The upstream project is no longer maintained; this fork carries
@@ -219,6 +219,6 @@ policy for details.
 
 ## Getting help
 
-Open a [GitHub issue](https://github.com/MattJackson/tiberius/issues) for bugs,
+Open a [GitHub issue](https://github.com/MattJackson/tiberius-ng/issues) for bugs,
 questions, or feature ideas. Thanks for helping keep Tiberius healthy and
 maintained!

@@ -14,8 +14,8 @@ categories = ["database"]
 license = "MIT OR Apache-2.0"
 name = "tiberius-ng"
 readme = "README.md"
-repository = "https://github.com/MattJackson/tiberius"
-homepage = "https://github.com/MattJackson/tiberius"
+repository = "https://github.com/MattJackson/tiberius-ng"
+homepage = "https://github.com/MattJackson/tiberius-ng"
 version = "0.13.0"
 
 # The published package is `tiberius-ng` (the crates.io name `tiberius` is owned

@@ -3,9 +3,9 @@
 [![docs.rs](https://docs.rs/tiberius-ng/badge.svg)](https://docs.rs/tiberius-ng)
 [![Downloads](https://img.shields.io/crates/d/tiberius-ng.svg)](https://crates.io/crates/tiberius-ng)
 [![License](https://img.shields.io/crates/l/tiberius-ng.svg)](#license)
-[![Cargo tests](https://github.com/MattJackson/tiberius/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/MattJackson/tiberius/actions/workflows/test.yml)
-[![Security audit](https://github.com/MattJackson/tiberius/actions/workflows/security.yml/badge.svg?branch=dev)](https://github.com/MattJackson/tiberius/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/MattJackson/tiberius/branch/dev/graph/badge.svg)](https://codecov.io/gh/MattJackson/tiberius)
+[![Cargo tests](https://github.com/MattJackson/tiberius-ng/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/MattJackson/tiberius-ng/actions/workflows/test.yml)
+[![Security audit](https://github.com/MattJackson/tiberius-ng/actions/workflows/security.yml/badge.svg?branch=dev)](https://github.com/MattJackson/tiberius-ng/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/MattJackson/tiberius-ng/branch/dev/graph/badge.svg)](https://codecov.io/gh/MattJackson/tiberius-ng)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 A native Microsoft SQL Server (TDS) client for Rust.
@@ -14,7 +14,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 >
 > This is a **community continuation of [`tiberius`](https://github.com/prisma/tiberius)**, which
 > the original authors ([Prisma](https://github.com/prisma/tiberius)) no longer maintain. This fork
-> is **maintained full-time** at [**MattJackson/tiberius**](https://github.com/MattJackson/tiberius):
+> is **maintained full-time** at [**MattJackson/tiberius-ng**](https://github.com/MattJackson/tiberius-ng):
 > we are working through the backlog of open PRs and issues, keeping dependencies current and the
 > crate free of security advisories, and cutting regular releases.
 >
@@ -22,7 +22,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 > under the package name **[`tiberius-ng`](https://crates.io/crates/tiberius-ng)**. The library name
 > is still `tiberius`, so your `use tiberius::…` code does not change — see
 > [Installation](#installation) below. Contributions, bug reports and feature requests are welcome
-> [in the issue tracker](https://github.com/MattJackson/tiberius/issues).
+> [in the issue tracker](https://github.com/MattJackson/tiberius-ng/issues).
 
 ## Installation
 
@@ -187,7 +187,7 @@ Supply-chain security is enforced in CI via [`cargo-deny`](https://github.com/Em
 vulnerability or yanked crate in the built dependency graph fails the build.
 
 To report a security vulnerability, please use
-[GitHub's private security advisory reporting](https://github.com/MattJackson/tiberius/security/advisories/new)
+[GitHub's private security advisory reporting](https://github.com/MattJackson/tiberius-ng/security/advisories/new)
 for this repository rather than opening a public issue.
 
 ## Contributing
@@ -196,7 +196,7 @@ Contributions are very welcome — this is a community-maintained project. Pleas
 read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md)
 before opening a pull request, and target PRs at the `dev` branch (see the
 `dev → qa → main` lifecycle in CONTRIBUTING). Good first issues and help-wanted
-items are tracked in the [issue tracker](https://github.com/MattJackson/tiberius/issues).
+items are tracked in the [issue tracker](https://github.com/MattJackson/tiberius-ng/issues).
 
 ## License
 

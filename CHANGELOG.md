@@ -20,7 +20,7 @@ here as they land.
 ### Added
 
 - (Backlog) Further community PRs and issue fixes are being triaged and
-  integrated; see the [issue tracker](https://github.com/MattJackson/tiberius/issues).
+  integrated; see the [issue tracker](https://github.com/MattJackson/tiberius-ng/issues).
 
 ### Fixed
 
@@ -125,7 +125,7 @@ long-standing bug reports, and substantially extends TDS protocol coverage
 
 - Rebranded to the maintained fork (`tiberius-ng` 0.13.0); repository, docs.rs,
   badges and metadata now point at
-  [MattJackson/tiberius](https://github.com/MattJackson/tiberius).
+  [MattJackson/tiberius-ng](https://github.com/MattJackson/tiberius-ng).
 - Modernized the GitHub Actions workflows (SHA-pinned actions, multi-OS matrix);
   replaced the broken upstream security workflow; added Dependabot, issue/PR
   templates, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`, and a
@@ -476,7 +476,7 @@ has completely settled on Tokio 1.0.
 - Support for many more types
 - Async/await, futures 0.3
 
-[Unreleased]: https://github.com/MattJackson/tiberius/compare/v0.13.0...HEAD
-[0.13.0]: https://github.com/MattJackson/tiberius/compare/v0.12.3...v0.13.0
+[Unreleased]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/MattJackson/tiberius-ng/compare/v0.12.3...v0.13.0
 </content>
 </invoke>

@@ -9,9 +9,9 @@ body:
         Thanks for helping improve tiberius-ng!
 
         Please search
-        [existing issues](https://github.com/MattJackson/tiberius/issues?q=is%3Aissue)
+        [existing issues](https://github.com/MattJackson/tiberius-ng/issues?q=is%3Aissue)
         first — the feature may already be requested or in progress. For
-        open-ended ideas and questions, [Discussions](https://github.com/MattJackson/tiberius/discussions)
+        open-ended ideas and questions, [Discussions](https://github.com/MattJackson/tiberius-ng/discussions)
         is often a better starting point.
 
         Note the project's stated non-goals (connection pooling, query building,

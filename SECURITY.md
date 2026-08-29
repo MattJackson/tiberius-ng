@@ -27,7 +27,7 @@ pull requests, or discussions.**
 
 Instead, report them privately through GitHub Security Advisories:
 
-- **[Open a private security advisory](https://github.com/MattJackson/tiberius/security/advisories/new)**
+- **[Open a private security advisory](https://github.com/MattJackson/tiberius-ng/security/advisories/new)**
 
 This creates a confidential channel visible only to the maintainers, allowing us
 to investigate and coordinate a fix before any public disclosure.

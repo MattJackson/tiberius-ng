@@ -9,9 +9,9 @@ body:
         Thanks for taking the time to file a bug report!
 
         Before opening a new issue, please search
-        [existing issues](https://github.com/MattJackson/tiberius/issues?q=is%3Aissue)
+        [existing issues](https://github.com/MattJackson/tiberius-ng/issues?q=is%3Aissue)
         to avoid duplicates. For usage questions and general discussion, use
-        [Discussions](https://github.com/MattJackson/tiberius/discussions) instead.
+        [Discussions](https://github.com/MattJackson/tiberius-ng/discussions) instead.
 
         The more precisely you can describe the problem — ideally with a minimal,
         self-contained reproduction — the faster it can be diagnosed.
