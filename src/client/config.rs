@@ -2,6 +2,7 @@ mod ado_net;
 mod jdbc;
 
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 
 use super::AuthMethod;
@@ -32,6 +33,12 @@ pub struct Config {
     pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
     pub(crate) readonly: bool,
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    pub(crate) client_cert: Option<ClientCertificate>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +47,71 @@ pub(crate) enum TrustConfig {
     CaCertificateLocation(PathBuf),
     TrustAll,
     Default,
+}
+
+/// A client certificate (together with its private key) that is presented to
+/// the server during the TLS handshake in order to perform mutual TLS.
+///
+/// This corresponds to the TDS 8.0 "strict" encryption client-certificate
+/// login flow (`ENCRYPT_CLIENT_CERT`), in which the server authenticates the
+/// connecting client from the certificate it presents rather than (or in
+/// addition to) a SQL login. The certificate is supplied entirely at the TLS
+/// layer, so it is only meaningful when one of the TLS backends is enabled.
+///
+/// Not every backend understands every container format:
+///
+/// | Format | `native-tls` | `vendored-openssl` | `rustls` |
+/// |--------|:------------:|:------------------:|:--------:|
+/// | PKCS#12 (`.pfx`/`.p12`) | yes | yes | no |
+/// | PEM certificate + PKCS#8 key | yes | no | yes |
+///
+/// Supplying a format the active backend cannot use results in a
+/// [`Error::Tls`] when the connection is established.
+///
+/// [`Error::Tls`]: crate::error::Error::Tls
+#[cfg(any(
+    feature = "rustls",
+    feature = "native-tls",
+    feature = "vendored-openssl"
+))]
+#[derive(Clone)]
+pub(crate) enum ClientCertificate {
+    /// A DER-encoded PKCS#12 archive (`.pfx`/`.p12`) protected by the given
+    /// password, containing the leaf certificate, its private key and any
+    /// intermediate certificates.
+    Pkcs12 {
+        path: PathBuf,
+        // Only consumed by the `native-tls`/`vendored-openssl` backends; the
+        // `rustls` backend rejects PKCS#12 before reading the password.
+        #[allow(dead_code)]
+        password: String,
+    },
+    /// A PEM-encoded certificate chain (leaf certificate first) and a separate
+    /// PEM-encoded PKCS#8 private key.
+    Pem { cert: PathBuf, key: PathBuf },
+}
+
+#[cfg(any(
+    feature = "rustls",
+    feature = "native-tls",
+    feature = "vendored-openssl"
+))]
+impl fmt::Debug for ClientCertificate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Never render the PKCS#12 password.
+        match self {
+            Self::Pkcs12 { path, .. } => f
+                .debug_struct("Pkcs12")
+                .field("path", path)
+                .field("password", &"<HIDDEN>")
+                .finish(),
+            Self::Pem { cert, key } => f
+                .debug_struct("Pem")
+                .field("cert", cert)
+                .field("key", key)
+                .finish(),
+        }
+    }
 }
 
 impl Default for Config {
@@ -65,6 +137,12 @@ impl Default for Config {
             trust: TrustConfig::Default,
             auth: AuthMethod::None,
             readonly: false,
+            #[cfg(any(
+                feature = "rustls",
+                feature = "native-tls",
+                feature = "vendored-openssl"
+            ))]
+            client_cert: None,
         }
     }
 }
@@ -155,6 +233,79 @@ impl Config {
         } else {
             self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
         }
+    }
+
+    /// Present a client certificate to the server during the TLS handshake,
+    /// enabling mutual TLS. The certificate and private key are read from a
+    /// DER-encoded PKCS#12 archive (`.pfx`/`.p12`) decrypted with `password`.
+    ///
+    /// This drives the TDS 8.0 "strict" client-certificate login flow
+    /// (`ENCRYPT_CLIENT_CERT`), where the server authenticates the client from
+    /// the certificate it presents. See [MS-TDS] section 2.2.6.5.
+    ///
+    /// Supported with the `native-tls` and `vendored-openssl` backends. The
+    /// `rustls` backend cannot parse PKCS#12; use [`client_certificate_pem`]
+    /// instead.
+    ///
+    /// - Defaults to presenting no client certificate.
+    ///
+    /// [MS-TDS]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/
+    /// [`client_certificate_pem`]: Config::client_certificate_pem
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "rustls",
+            feature = "native-tls",
+            feature = "vendored-openssl"
+        )))
+    )]
+    pub fn client_certificate_pkcs12(&mut self, path: impl ToString, password: impl ToString) {
+        self.client_cert = Some(ClientCertificate::Pkcs12 {
+            path: PathBuf::from(path.to_string()),
+            password: password.to_string(),
+        });
+    }
+
+    /// Present a client certificate to the server during the TLS handshake,
+    /// enabling mutual TLS. The certificate chain (leaf certificate first) is
+    /// read from the PEM file at `cert` and the matching PKCS#8 private key
+    /// from the PEM file at `key`.
+    ///
+    /// This drives the TDS 8.0 "strict" client-certificate login flow
+    /// (`ENCRYPT_CLIENT_CERT`), where the server authenticates the client from
+    /// the certificate it presents. See [MS-TDS] section 2.2.6.5.
+    ///
+    /// Supported with the `rustls` and `native-tls` backends. The
+    /// `vendored-openssl` backend requires PKCS#12; use
+    /// [`client_certificate_pkcs12`] instead.
+    ///
+    /// - Defaults to presenting no client certificate.
+    ///
+    /// [MS-TDS]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/
+    /// [`client_certificate_pkcs12`]: Config::client_certificate_pkcs12
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(any(
+            feature = "rustls",
+            feature = "native-tls",
+            feature = "vendored-openssl"
+        )))
+    )]
+    pub fn client_certificate_pem(&mut self, cert: impl ToString, key: impl ToString) {
+        self.client_cert = Some(ClientCertificate::Pem {
+            cert: PathBuf::from(cert.to_string()),
+            key: PathBuf::from(key.to_string()),
+        });
     }
 
     /// Sets the authentication method.
@@ -387,5 +538,75 @@ pub(crate) trait ConfigString {
             .get("applicationintent")
             .filter(|val| *val == "ReadOnly")
             .is_some()
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    )
+))]
+mod client_cert_tests {
+    use super::{ClientCertificate, Config};
+
+    #[test]
+    fn defaults_to_no_client_certificate() {
+        let config = Config::new();
+        assert!(config.client_cert.is_none());
+    }
+
+    #[test]
+    fn pkcs12_sets_path_and_password() {
+        let mut config = Config::new();
+        config.client_certificate_pkcs12("/tmp/client.pfx", "hunter2");
+
+        match config.client_cert {
+            Some(ClientCertificate::Pkcs12 { path, password }) => {
+                assert_eq!(path.to_str(), Some("/tmp/client.pfx"));
+                assert_eq!(password, "hunter2");
+            }
+            other => panic!("expected a PKCS#12 client certificate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pem_sets_cert_and_key_paths() {
+        let mut config = Config::new();
+        config.client_certificate_pem("/tmp/client.pem", "/tmp/client.key");
+
+        match config.client_cert {
+            Some(ClientCertificate::Pem { cert, key }) => {
+                assert_eq!(cert.to_str(), Some("/tmp/client.pem"));
+                assert_eq!(key.to_str(), Some("/tmp/client.key"));
+            }
+            other => panic!("expected a PEM client certificate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn later_call_overrides_earlier_client_certificate() {
+        let mut config = Config::new();
+        config.client_certificate_pkcs12("/tmp/client.pfx", "hunter2");
+        config.client_certificate_pem("/tmp/client.pem", "/tmp/client.key");
+
+        assert!(matches!(
+            config.client_cert,
+            Some(ClientCertificate::Pem { .. })
+        ));
+    }
+
+    #[test]
+    fn debug_redacts_pkcs12_password() {
+        let cert = ClientCertificate::Pkcs12 {
+            path: "/tmp/client.pfx".into(),
+            password: "super-secret".into(),
+        };
+
+        let rendered = format!("{cert:?}");
+        assert!(rendered.contains("<HIDDEN>"));
+        assert!(!rendered.contains("super-secret"));
     }
 }
