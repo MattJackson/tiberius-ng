@@ -35,3 +35,9 @@ pub use token_session_state::*;
 pub use token_sspi::*;
 pub use token_tab_name::*;
 pub use token_type::*;
+
+/// Upper bound on the length a variable-length token declares for its body
+/// before we allocate for it. The length is server-controlled; without a cap a
+/// single 4-byte field could force a multi-gigabyte allocation. Chosen well
+/// above any realistic FEDAUTHINFO / SESSIONSTATE payload.
+pub(crate) const MAX_TOKEN_BODY: usize = 16 * 1024 * 1024;

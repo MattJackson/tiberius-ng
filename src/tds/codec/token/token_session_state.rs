@@ -92,6 +92,12 @@ impl TokenSessionState {
         // Status and all SessionStateData entries.
         let len = src.read_u32_le().await? as usize;
 
+        if len > super::MAX_TOKEN_BODY {
+            return Err(Error::Protocol(
+                format!("SESSIONSTATE token length {len} exceeds the maximum").into(),
+            ));
+        }
+
         let mut bytes = vec![0u8; len];
         src.read_exact(&mut bytes[0..len]).await?;
 

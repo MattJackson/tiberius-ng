@@ -404,7 +404,11 @@ impl TypeInfo {
                     | VarLenType::Text
                     | VarLenType::NText
                     | VarLenType::SSVariant => src.read_u32_le().await? as usize,
-                    _ => todo!("not yet implemented for {:?}", ty),
+                    _ => {
+                        return Err(Error::Protocol(
+                            format!("unsupported column type in COLMETADATA: {:?}", ty).into(),
+                        ))
+                    }
                 };
 
                 let collation = match ty {
@@ -426,6 +430,18 @@ impl TypeInfo {
                     VarLenType::Decimaln | VarLenType::Numericn => {
                         let precision = src.read_u8().await?;
                         let scale = src.read_u8().await?;
+
+                        // MS-TDS: precision is 1..=38 and scale 0..=precision.
+                        // Reject out-of-range server values here so downstream
+                        // (Numeric decode/Display) never sees an impossible scale.
+                        if precision > 38 || scale > precision {
+                            return Err(Error::Protocol(
+                                format!(
+                                    "decimal/numeric: invalid precision {precision} / scale {scale}"
+                                )
+                                .into(),
+                            ));
+                        }
 
                         TypeInfo::VarLenSizedPrecision {
                             size: len,

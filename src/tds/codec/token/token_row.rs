@@ -101,7 +101,9 @@ impl TokenRow<'static> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let col_meta = src.context().last_meta().unwrap();
+        let col_meta = src.context().last_meta().ok_or_else(|| {
+            crate::Error::Protocol("ROW token arrived before any COLMETADATA".into())
+        })?;
 
         let mut row = Self {
             data: Vec::with_capacity(col_meta.columns.len()),
@@ -121,7 +123,9 @@ impl TokenRow<'static> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let col_meta = src.context().last_meta().unwrap();
+        let col_meta = src.context().last_meta().ok_or_else(|| {
+            crate::Error::Protocol("NBCROW token arrived before any COLMETADATA".into())
+        })?;
         let row_bitmap = RowBitmap::decode(src, col_meta.columns.len()).await?;
 
         let mut row = Self {

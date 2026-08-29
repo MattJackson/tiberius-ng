@@ -41,6 +41,12 @@ impl TokenFedAuthInfo {
         // starting at (and including) `CountOfInfoIDs`.
         let token_length = src.read_u32_le().await? as usize;
 
+        if token_length > super::MAX_TOKEN_BODY {
+            return Err(Error::Protocol(
+                format!("FEDAUTHINFO token length {token_length} exceeds the maximum").into(),
+            ));
+        }
+
         let mut body = vec![0u8; token_length];
         src.read_exact(&mut body).await?;
 

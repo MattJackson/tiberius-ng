@@ -56,7 +56,10 @@ impl<'a> Display for MetaDataColumn<'a> {
                 FixedLenType::Float8 => write!(f, "float")?,
                 FixedLenType::Money4 => write!(f, "smallmoney")?,
                 FixedLenType::Int8 => write!(f, "bigint")?,
-                FixedLenType::Null => unreachable!(),
+                // The TDS "null" fixed type carries no value; surface it as the
+                // int it decodes to rather than panicking (a bare `SELECT NULL`
+                // produces such a column).
+                FixedLenType::Null => write!(f, "int")?,
             },
             TypeInfo::VarLenSized(ctx) => match ctx.r#type() {
                 VarLenType::Bitn => write!(f, "bit")?,
@@ -68,6 +71,10 @@ impl<'a> Display for MetaDataColumn<'a> {
                 #[cfg(feature = "tds73")]
                 VarLenType::Datetime2 => write!(f, "datetime2({})", ctx.len())?,
                 VarLenType::Datetimen => write!(f, "datetime")?,
+                VarLenType::Money => match ctx.len() {
+                    4 => write!(f, "smallmoney")?,
+                    _ => write!(f, "money")?,
+                },
                 #[cfg(feature = "tds73")]
                 VarLenType::DatetimeOffsetn => write!(f, "datetimeoffset")?,
                 VarLenType::BigVarBin => {
@@ -101,16 +108,16 @@ impl<'a> Display for MetaDataColumn<'a> {
                     1 => write!(f, "tinyint")?,
                     2 => write!(f, "smallint")?,
                     4 => write!(f, "int")?,
-                    8 => write!(f, "bigint")?,
-                    _ => unreachable!(),
+                    _ => write!(f, "bigint")?,
                 },
                 VarLenType::Floatn => match ctx.len() {
                     4 => write!(f, "real")?,
-                    8 => write!(f, "float")?,
-                    _ => unreachable!(),
+                    _ => write!(f, "float")?,
                 },
                 VarLenType::SSVariant => write!(f, "sql_variant")?,
-                _ => unreachable!(),
+                // Any other var-len type: emit its debug name rather than
+                // panicking, so formatting metadata never crashes.
+                other => write!(f, "{other:?}")?,
             },
             TypeInfo::VarLenSizedPrecision {
                 ty,
@@ -118,9 +125,9 @@ impl<'a> Display for MetaDataColumn<'a> {
                 precision,
                 scale,
             } => match ty {
-                VarLenType::Decimaln => write!(f, "decimal({},{})", precision, scale)?,
                 VarLenType::Numericn => write!(f, "numeric({},{})", precision, scale)?,
-                _ => unreachable!(),
+                // Decimaln, and any other precision-carrying type.
+                _ => write!(f, "decimal({},{})", precision, scale)?,
             },
             TypeInfo::Xml { .. } => write!(f, "xml")?,
             TypeInfo::Udt(info) => write!(f, "{}.{}", info.schema_name, info.type_name)?,

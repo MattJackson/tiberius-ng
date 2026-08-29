@@ -213,7 +213,11 @@ impl TokenEnvChange {
             }
             EnvChangeTy::BeginTransaction | EnvChangeTy::EnlistDTCTransaction => {
                 let len = buf.read_u8()?;
-                assert!(len == 8);
+                if len != 8 {
+                    return Err(Error::Protocol(
+                        format!("ENVCHANGE transaction descriptor length {len}, expected 8").into(),
+                    ));
+                }
 
                 let mut desc = [0; 8];
                 buf.read_exact(&mut desc)?;

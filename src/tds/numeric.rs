@@ -29,11 +29,12 @@ impl Numeric {
     /// Creates a new Numeric value.
     ///
     /// # Panic
-    /// It will panic if the scale exceed 37.
+    /// It will panic if the scale exceeds 38.
     pub fn new_with_scale(value: i128, scale: u8) -> Self {
-        // scale cannot exceed 37 since a
-        // max precision of 38 is possible here.
-        assert!(scale < 38);
+        // SQL Server allows a maximum precision of 38, and scale may equal
+        // precision (e.g. `decimal(38, 38)`), so scale 38 is valid; 10^38 still
+        // fits in i128.
+        assert!(scale <= 38);
 
         Numeric { value, scale }
     }
@@ -433,9 +434,15 @@ mod tests {
     }
 
     #[test]
+    fn new_with_scale_allows_max_scale() {
+        // decimal(38, 38) is valid in SQL Server, so scale 38 must be accepted.
+        assert_eq!(Numeric::new_with_scale(1, 38).scale(), 38);
+    }
+
+    #[test]
     #[should_panic]
-    fn new_with_scale_panics_on_large_scale() {
-        Numeric::new_with_scale(1, 38);
+    fn new_with_scale_panics_on_too_large_scale() {
+        Numeric::new_with_scale(1, 39);
     }
 
     #[test]
