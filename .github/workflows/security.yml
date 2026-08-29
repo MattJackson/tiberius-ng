@@ -17,6 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1 # v2.0.14
         with:
-          command: check advisories bans sources
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      # Install the latest cargo-deny directly rather than via cargo-deny-action:
+      # the action bundles an older cargo-deny that fails to parse newer
+      # advisory-db entries (e.g. RUSTSEC-2026-0066).
+      - uses: taiki-e/install-action@cargo-deny
+      - name: cargo-deny
+        run: cargo deny check advisories bans sources
