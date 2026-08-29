@@ -289,8 +289,8 @@ pub use sql_browser::SqlBrowser;
 pub use tds::{
     codec::{
         AltMetaDataColumn, BaseMetaDataColumn, BulkLoadRequest, ColumnData, ColumnFlag,
-        FixedLenType, IntoRow, MetaDataColumn, TokenAltMetaData, TokenAltRow, TokenRow, TypeInfo,
-        TypeLength, VarLenContext, VarLenType,
+        FixedLenType, IntoRow, IsolationLevel, MetaDataColumn, TokenAltMetaData, TokenAltRow,
+        TokenRow, TypeInfo, TypeLength, VarLenContext, VarLenType,
     },
     collation::Collation,
     numeric,
