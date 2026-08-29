@@ -21,3 +21,29 @@ where
 
     Ok(date)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn rejects_underlength_value_instead_of_panicking() {
+        // rlen is 1 (non-NULL but < 3): must be a protocol error, not a panic.
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&[1u8]);
+        let err = decode(&mut buf.into_sql_read_bytes(), 8)
+            .await
+            .expect_err("rlen < 3 must be rejected");
+        assert!(matches!(err, crate::Error::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn zero_length_is_null() {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&[0u8]);
+        let v = decode(&mut buf.into_sql_read_bytes(), 8).await.unwrap();
+        assert!(matches!(v, ColumnData::DateTime2(None)));
+    }
+}

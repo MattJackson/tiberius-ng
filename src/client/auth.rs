@@ -156,4 +156,14 @@ mod tests {
 
         assert!(password.is_empty());
     }
+
+    #[test]
+    fn debug_redacts_credentials() {
+        let sql = format!("{:?}", AuthMethod::sql_server("sa", "sql-secret"));
+        assert!(!sql.contains("sql-secret"), "SQL password leaked: {sql}");
+
+        let aad = format!("{:?}", AuthMethod::aad_token("aad-secret-token"));
+        assert!(!aad.contains("aad-secret-token"), "AAD token leaked: {aad}");
+        assert!(aad.contains("HIDDEN"));
+    }
 }

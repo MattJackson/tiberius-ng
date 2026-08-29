@@ -23,3 +23,21 @@ where
 
     Ok(dto)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn rejects_underlength_value_instead_of_panicking() {
+        // rlen in 1..=4 (non-NULL but < 5): must be a protocol error, not a panic.
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&[4u8]);
+        let err = decode(&mut buf.into_sql_read_bytes(), 8)
+            .await
+            .expect_err("rlen < 5 must be rejected");
+        assert!(matches!(err, crate::Error::Protocol(_)));
+    }
+}

@@ -212,4 +212,16 @@ mod tests {
         row.encode(&mut buf_with_columns)
             .expect_err("wrong number of columns");
     }
+
+    #[tokio::test]
+    async fn row_before_colmetadata_is_protocol_error() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        // No COLMETADATA has been seen, so last_meta() is None: decoding a ROW
+        // must be a protocol error rather than an unwrap() panic.
+        let mut buf = BytesMut::new();
+        let err = TokenRow::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("ROW before COLMETADATA must error");
+        assert!(matches!(err, crate::Error::Protocol(_)));
+    }
 }
