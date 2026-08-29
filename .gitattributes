@@ -1,0 +1,5 @@
+# Append-heavy protocol enums/dispatch: auto-union additive merges from the
+# per-token feature PRs. (Temporary during the TDS-compliance merge batch.)
+src/tds/codec/token/token_type.rs merge=union
+src/tds/codec/token.rs merge=union
+src/tds/stream/token.rs merge=union
