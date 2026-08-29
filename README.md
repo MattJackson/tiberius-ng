@@ -111,6 +111,14 @@ Prefer a connection string? `Config::from_ado_string("Server=tcp:localhost,1433;
 and `Config::from_jdbc_string(…)` are both supported, or build one fluently with
 [`ConfigBuilder`](https://docs.rs/tiberius-ng/latest/tiberius/struct.ConfigBuilder.html).
 
+## Documentation
+
+- **[Guide](docs/GUIDE.md)** — a practical tour: connecting, config, TLS, auth,
+  querying, bulk insert, stored procedures/TVPs, transactions, and more.
+- **[API docs](https://docs.rs/tiberius-ng)** — the full reference on docs.rs.
+- **[`examples/`](examples/)** — runnable examples (tokio, bulk, named pipes, AAD).
+- **[TDS compatibility](docs/TDS_COMPATIBILITY.md)** — the protocol coverage matrix.
+
 ## Feature flags
 
 | Flag | Purpose | Default |

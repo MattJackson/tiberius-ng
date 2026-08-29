@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[doc(inline)]
-pub use tvp_macro::TableValueRow;
+pub use tiberius_ng_macros::TableValueRow;
 
 /// A structure that represents a single row of a table-valued parameter (TVP)
 /// implements this trait.
