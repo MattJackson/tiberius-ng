@@ -26,11 +26,15 @@ version = "0.13.0"
 name = "tiberius"
 
 [workspace]
-members = ["runtimes-macro"]
+members = ["runtimes-macro", "tvp-macro"]
 
 [[test]]
 path = "tests/query.rs"
 name = "query"
+
+[[test]]
+path = "tests/command.rs"
+name = "command"
 
 [[test]]
 path = "tests/named-instance-async.rs"
@@ -182,6 +186,9 @@ version = "1"
 
 [dev-dependencies.runtimes-macro]
 path = "./runtimes-macro"
+
+[dependencies.tvp-macro]
+path = "./tvp-macro"
 
 [dev-dependencies]
 names = "0.14"
