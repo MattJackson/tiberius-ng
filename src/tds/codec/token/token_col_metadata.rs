@@ -560,6 +560,8 @@ mod tests {
         ];
 
         for (ty, expected) in cases {
+            // Display brackets the column name for use in bulk `INSERT` statements.
+            let expected = expected.replacen("c ", "[c] ", 1);
             assert_eq!(format!("{}", meta(ty, "c")), expected);
         }
     }
