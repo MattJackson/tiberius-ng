@@ -1,4 +1,5 @@
 use crate::sql_read_bytes::SqlReadBytes;
+use futures_util::io::AsyncReadExt;
 
 // Decode a partially length-prefixed type.
 pub(crate) async fn decode<R>(src: &mut R, len: usize) -> crate::Result<Option<Vec<u8>>>
@@ -8,17 +9,16 @@ where
     match len {
         // Fixed size
         len if len < 0xffff => {
-            let len = src.read_u16_le().await? as u64;
+            let len = src.read_u16_le().await? as usize;
 
             match len {
                 // NULL
                 0xffff => Ok(None),
+                // `len` is a u16 here, so it is inherently bounded (< 64 KiB);
+                // read it in one shot instead of byte-by-byte.
                 _ => {
-                    let mut data = Vec::with_capacity(len as usize);
-
-                    for _ in 0..len {
-                        data.push(src.read_u8().await?);
-                    }
+                    let mut data = vec![0u8; len];
+                    src.read_exact(&mut data).await?;
 
                     Ok(Some(data))
                 }
@@ -39,24 +39,24 @@ where
                 _ => Vec::with_capacity((len as usize).min(super::MAX_PREALLOC)),
             };
 
-            let mut chunk_data_left = 0;
+            // Reusable stack buffer so each chunk is read in bounded bulk copies
+            // rather than one async `read_u8()` future per byte, without ever
+            // pre-allocating a whole (untrusted) chunk length up front.
+            let mut scratch = [0u8; super::MAX_PREALLOC];
 
             loop {
-                if chunk_data_left == 0 {
-                    // We have no chunk. Start a new one.
-                    let chunk_size = src.read_u32_le().await? as usize;
+                let chunk_size = src.read_u32_le().await? as usize;
 
-                    if chunk_size == 0 {
-                        break; // found a sentinel, we're done
-                    } else {
-                        chunk_data_left = chunk_size
-                    }
-                } else {
-                    // Just read a byte
-                    let byte = src.read_u8().await?;
-                    chunk_data_left -= 1;
+                if chunk_size == 0 {
+                    break; // found a sentinel, we're done
+                }
 
-                    data.push(byte);
+                let mut remaining = chunk_size;
+                while remaining > 0 {
+                    let take = remaining.min(scratch.len());
+                    src.read_exact(&mut scratch[..take]).await?;
+                    data.extend_from_slice(&scratch[..take]);
+                    remaining -= take;
                 }
             }
 
