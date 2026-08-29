@@ -1,8 +1,8 @@
 # Tiberius (tiberius-ng)
 [![crates.io](https://img.shields.io/crates/v/tiberius-ng.svg)](https://crates.io/crates/tiberius-ng)
 [![docs.rs](https://docs.rs/tiberius-ng/badge.svg)](https://docs.rs/tiberius-ng)
-[![Cargo tests](https://github.com/MattJackson/tiberius/actions/workflows/test.yml/badge.svg)](https://github.com/MattJackson/tiberius/actions/workflows/test.yml)
-[![Security audit](https://github.com/MattJackson/tiberius/actions/workflows/security.yml/badge.svg)](https://github.com/MattJackson/tiberius/actions/workflows/security.yml)
+[![Cargo tests](https://github.com/MattJackson/tiberius/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/MattJackson/tiberius/actions/workflows/test.yml)
+[![Security audit](https://github.com/MattJackson/tiberius/actions/workflows/security.yml/badge.svg?branch=dev)](https://github.com/MattJackson/tiberius/actions/workflows/security.yml)
 
 A native Microsoft SQL Server (TDS) client for Rust.
 

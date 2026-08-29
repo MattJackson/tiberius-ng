@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+      - qa
+      - dev
   pull_request:
 jobs:
   clippy:
