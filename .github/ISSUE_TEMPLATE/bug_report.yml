@@ -1,0 +1,138 @@
+name: Bug report
+description: Report a defect in tiberius-ng so it can be reproduced and fixed.
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report!
+
+        Before opening a new issue, please search
+        [existing issues](https://github.com/MattJackson/tiberius/issues?q=is%3Aissue)
+        to avoid duplicates. For usage questions and general discussion, use
+        [Discussions](https://github.com/MattJackson/tiberius/discussions) instead.
+
+        The more precisely you can describe the problem — ideally with a minimal,
+        self-contained reproduction — the faster it can be diagnosed.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear and concise description of the bug.
+      placeholder: Querying a `datetimeoffset` column panics when the offset is negative.
+    validations:
+      required: true
+  - type: input
+    id: tiberius-version
+    attributes:
+      label: tiberius-ng version
+      description: >-
+        The exact version of the `tiberius-ng` package you are using (from
+        `Cargo.toml` or `cargo tree -p tiberius-ng`). If building from git,
+        include the branch and commit hash.
+      placeholder: 0.13.0-alpha.1
+    validations:
+      required: true
+  - type: dropdown
+    id: sql-server-version
+    attributes:
+      label: SQL Server version
+      description: Which SQL Server (or compatible) product exhibits the problem?
+      options:
+        - SQL Server 2022
+        - SQL Server 2019
+        - SQL Server 2017
+        - SQL Server 2016
+        - SQL Server 2014
+        - SQL Server 2012
+        - SQL Server 2008
+        - SQL Server 2005
+        - Azure SQL Database
+        - Azure SQL Edge
+        - Azure SQL Managed Instance
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: sql-server-details
+    attributes:
+      label: SQL Server details
+      description: >-
+        Output of `SELECT @@VERSION`, the edition, and how it is hosted
+        (Docker image, managed service, on-prem, etc.). Required if you selected
+        "Other" above.
+      placeholder: "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5 (X64), Developer Edition, mcr.microsoft.com/mssql/server:2022-latest"
+    validations:
+      required: false
+  - type: input
+    id: feature-flags
+    attributes:
+      label: Feature flags
+      description: >-
+        The Cargo feature flags enabled for `tiberius-ng`. Include your async
+        runtime and TLS backend, since behaviour differs between them.
+      placeholder: "default (tds73, winauth, native-tls) + sql-browser-tokio, rust_decimal, chrono"
+    validations:
+      required: true
+  - type: input
+    id: rust-version
+    attributes:
+      label: Rust toolchain
+      description: Output of `rustc --version` and your host OS / architecture.
+      placeholder: "rustc 1.86.0 (stable) — macOS 15.6 aarch64"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: >-
+        Minimal steps or, ideally, a self-contained code snippet that reproduces
+        the bug. Include the connection configuration (with credentials redacted)
+        and any relevant table schema / DDL.
+      render: rust
+      placeholder: |
+        let mut config = Config::new();
+        config.host("localhost");
+        config.authentication(AuthMethod::sql_server("sa", "<redacted>"));
+        // ...
+        let row = client.query("SELECT CAST('2024-01-01 00:00:00 -05:00' AS datetimeoffset)", &[]).await?;
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What actually happened, including any error messages or panic output.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Relevant logs or a backtrace. tiberius-ng emits diagnostics via the
+        `tracing` crate — enabling `RUST_LOG=tiberius=trace` (or a `tracing`
+        subscriber at TRACE level) and pasting the TDS handshake / packet output
+        is extremely helpful. Set `RUST_BACKTRACE=1` for panics. This field is
+        automatically formatted as code, so no backticks are needed.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: >-
+        Anything else that might help — related issues, whether the problem is a
+        regression from an earlier version, workarounds you have tried, etc.
+    validations:
+      required: false

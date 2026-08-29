@@ -1,0 +1,74 @@
+name: Feature request
+description: Suggest a new capability or improvement for tiberius-ng.
+title: "[feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve tiberius-ng!
+
+        Please search
+        [existing issues](https://github.com/MattJackson/tiberius/issues?q=is%3Aissue)
+        first — the feature may already be requested or in progress. For
+        open-ended ideas and questions, [Discussions](https://github.com/MattJackson/tiberius/discussions)
+        is often a better starting point.
+
+        Note the project's stated non-goals (connection pooling, query building,
+        and ORM functionality). Requests in those areas are generally out of
+        scope, but suggestions that make tiberius-ng compose better with external
+        crates that provide them are welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: >-
+        What problem are you trying to solve? A feature request grounded in a
+        concrete use case is much easier to evaluate than one framed only as a
+        solution.
+      placeholder: I need to stream large `varbinary(max)` results without buffering the whole column in memory.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API, behaviour, or change you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: >-
+        Other approaches you have considered, existing workarounds, or how other
+        drivers solve the same problem.
+    validations:
+      required: false
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Backwards compatibility
+      description: Do you expect this change would break existing public API?
+      options:
+        - "No — additive / non-breaking"
+        - "Possibly — would need a careful design"
+        - "Yes — this is a breaking change"
+        - "Not sure"
+    validations:
+      required: false
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be willing to help implement this?
+      options:
+        - label: I am willing to open a pull request for this feature.
+          required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to TDS protocol documentation, related issues, or anything else that helps.
+    validations:
+      required: false

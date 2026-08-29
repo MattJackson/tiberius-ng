@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions
+    url: https://github.com/MattJackson/tiberius/discussions
+    about: >-
+      For usage questions, help with connection configuration, and general
+      discussion, please open a Discussion instead of an issue.
+  - name: Documentation
+    url: https://docs.rs/tiberius-ng/
+    about: API reference for tiberius-ng on docs.rs.
+  - name: Getting started & README
+    url: https://github.com/MattJackson/tiberius#readme
+    about: Installation, supported SQL Server versions, feature flags, and examples.
+  - name: Report a security vulnerability
+    url: https://github.com/MattJackson/tiberius/security/advisories/new
+    about: >-
+      Please report security issues privately through GitHub security
+      advisories — do not open a public issue.
