@@ -1,0 +1,56 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main, qa, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: llvm-cov + Codecov
+    runs-on: ubuntu-latest
+    env:
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y openssl libkrb5-dev
+
+      - name: Start SQL Server
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2022
+
+      - name: Wait for SQL Server
+        run: |
+          for i in $(seq 1 45); do
+            if (echo > /dev/tcp/localhost/1433) 2>/dev/null; then
+              echo "SQL Server is accepting connections"; exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server did not become ready in time" >&2; exit 1
+
+      - name: Generate coverage (lcov)
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: false
