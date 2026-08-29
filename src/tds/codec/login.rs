@@ -139,7 +139,7 @@ struct FedAuthExt<'a> {
 }
 
 /// the login packet
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct LoginMessage<'a> {
     /// the highest TDS version the client supports
@@ -169,6 +169,34 @@ pub struct LoginMessage<'a> {
     /// the default database to connect to
     db_name: Cow<'a, str>,
     fed_auth_ext: Option<FedAuthExt<'a>>,
+}
+
+// Manual Debug so the plaintext `password` is never printed (every other
+// credential-bearing type in the crate redacts it the same way).
+impl std::fmt::Debug for LoginMessage<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoginMessage")
+            .field("tds_version", &self.tds_version)
+            .field("packet_size", &self.packet_size)
+            .field("client_prog_ver", &self.client_prog_ver)
+            .field("client_pid", &self.client_pid)
+            .field("connection_id", &self.connection_id)
+            .field("option_flags_1", &self.option_flags_1)
+            .field("option_flags_2", &self.option_flags_2)
+            .field("integrated_security", &self.integrated_security)
+            .field("type_flags", &self.type_flags)
+            .field("option_flags_3", &self.option_flags_3)
+            .field("client_timezone", &self.client_timezone)
+            .field("client_lcid", &self.client_lcid)
+            .field("hostname", &self.hostname)
+            .field("username", &self.username)
+            .field("password", &"<HIDDEN>")
+            .field("app_name", &self.app_name)
+            .field("server_name", &self.server_name)
+            .field("db_name", &self.db_name)
+            .field("fed_auth_ext", &self.fed_auth_ext)
+            .finish()
+    }
 }
 
 impl<'a> LoginMessage<'a> {

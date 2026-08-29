@@ -505,7 +505,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
                 let identity = AuthIdentity {
                     username,
-                    password: auth.password.clone().into(),
+                    password: auth.password.to_string().into(),
                 };
 
                 let mut creds = ntlm
@@ -578,7 +578,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
                 let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
-                let mut client = builder.build(auth.domain, auth.user, auth.password);
+                let mut client = builder.build(auth.domain, auth.user, auth.password.to_string());
 
                 login_message.integrated_security(client.next_bytes(None)?);
 

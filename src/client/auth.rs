@@ -30,7 +30,7 @@ impl Debug for SqlServerAuth {
 )]
 pub struct WindowsAuth {
     pub(crate) user: String,
-    pub(crate) password: String,
+    pub(crate) password: Zeroizing<String>,
     pub(crate) domain: Option<String>,
 }
 
@@ -105,7 +105,7 @@ impl AuthMethod {
 
         Self::Windows(WindowsAuth {
             user: user.to_string(),
-            password: password.to_string(),
+            password: Zeroizing::new(password.to_string()),
             domain: domain.map(|s| s.to_string()),
         })
     }
