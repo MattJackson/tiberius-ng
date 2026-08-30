@@ -352,14 +352,21 @@ impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
         // Loading the OS trust store can fail (stripped container, unreadable
         // store) and can legitimately come back empty. Neither is a reason to
         // abort the whole process: surface a catchable error instead of the
-        // previous `.expect()` / `assert!` panics.
-        let native_certs =
-            rustls_native_certs::load_native_certs().map_err(|err| crate::Error::Io {
-                kind: IoErrorKind::NotFound,
-                message: format!("could not load platform certificates: {err}"),
-            })?;
+        // previous `.expect()` / `assert!` panics. `load_native_certs` returns
+        // a `CertificateResult` carrying both the parsed certs and any errors.
+        let native_certs = rustls_native_certs::load_native_certs();
 
-        for cert in native_certs {
+        if native_certs.certs.is_empty() && !native_certs.errors.is_empty() {
+            return Err(crate::Error::Io {
+                kind: IoErrorKind::NotFound,
+                message: format!(
+                    "could not load platform certificates: {:?}",
+                    native_certs.errors
+                ),
+            });
+        }
+
+        for cert in native_certs.certs {
             match roots.add(cert) {
                 Ok(_) => valid_count += 1,
                 Err(err) => {

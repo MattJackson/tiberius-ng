@@ -333,18 +333,27 @@ mod tests {
         }
     }
 
+    // `ColumnData::Time`/`Date`/`DateTimeOffset` and their `time`-crate
+    // `FromSql` impls only exist with the `tds73` feature.
+    #[cfg(feature = "tds73")]
     #[test]
-    fn from_sql_null_variants_return_none() {
+    fn from_sql_null_variants_return_none_tds73() {
         use crate::FromSql;
 
         assert_eq!(Time::from_sql(&ColumnData::Time(None)).unwrap(), None);
         assert_eq!(Date::from_sql(&ColumnData::Date(None)).unwrap(), None);
         assert_eq!(
-            PrimitiveDateTime::from_sql(&ColumnData::DateTime(None)).unwrap(),
+            OffsetDateTime::from_sql(&ColumnData::DateTimeOffset(None)).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn primitive_datetime_from_sql_null_returns_none() {
+        use crate::FromSql;
+
         assert_eq!(
-            OffsetDateTime::from_sql(&ColumnData::DateTimeOffset(None)).unwrap(),
+            PrimitiveDateTime::from_sql(&ColumnData::DateTime(None)).unwrap(),
             None
         );
     }
