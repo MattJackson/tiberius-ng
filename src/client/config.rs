@@ -948,6 +948,46 @@ mod tests {
         assert_eq!(Some("master"), config.database.as_deref());
     }
 
+    #[test]
+    fn config_from_builder_carries_builder_settings() {
+        // `From<ConfigBuilder>` must return the built inner config, not a default.
+        let config: Config = Config::builder().host("db.internal").port(2020).into();
+        assert_eq!("db.internal", config.get_host());
+        assert_eq!(2020, config.get_port());
+    }
+
+    #[test]
+    fn get_packet_size_reflects_the_set_value() {
+        let mut config = Config::new();
+        assert_eq!(config.get_packet_size(), None);
+        config.packet_size(8192);
+        assert_eq!(config.get_packet_size(), Some(8192));
+    }
+
+    #[test]
+    fn from_jdbc_string_parses_host_and_port() {
+        let config =
+            Config::from_jdbc_string("jdbc:sqlserver://db.example.com:2345").expect("valid jdbc");
+        assert_eq!("db.example.com", config.get_host());
+        assert_eq!(2345, config.get_port());
+    }
+
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    #[test]
+    fn get_hostname_in_certificate_falls_back_to_host() {
+        let mut config = Config::new();
+        config.host("real.host");
+        // Unset: falls back to the connection host.
+        assert_eq!(config.get_hostname_in_certificate(), "real.host");
+        // Set: returns the explicit certificate hostname.
+        config.hostname_in_certificate("cert.host");
+        assert_eq!(config.get_hostname_in_certificate(), "cert.host");
+    }
+
     #[cfg(any(
         feature = "rustls",
         feature = "native-tls",

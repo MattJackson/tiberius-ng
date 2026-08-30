@@ -294,3 +294,45 @@ impl<'a> Command<'a> {
         Ok(rpc_params)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestRow;
+
+    impl<'a> TableValueRow<'a> for TestRow {
+        fn bind_fields(&self, row: &mut SqlTableDataRow<'a>) {
+            row.add_field(1i32);
+        }
+
+        fn get_db_type() -> &'static str {
+            "default.Type"
+        }
+    }
+
+    #[test]
+    fn bind_table_with_dbtype_uses_the_explicit_db_type() {
+        // The explicit db_type argument must override the row's own get_db_type().
+        let mut cmd = Command::new("proc");
+        cmd.bind_table_with_dbtype("@tvp", "explicit.Type", vec![TestRow]);
+
+        assert_eq!(cmd.params.len(), 1);
+        assert_eq!(cmd.params[0].name, "@tvp");
+        match &cmd.params[0].data {
+            CommandParamData::Table(t) => assert_eq!(t.db_type, "explicit.Type"),
+            other => panic!("expected a table parameter, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bind_table_uses_the_rows_db_type() {
+        let mut cmd = Command::new("proc");
+        cmd.bind_table("@tvp", vec![TestRow]);
+
+        match &cmd.params[0].data {
+            CommandParamData::Table(t) => assert_eq!(t.db_type, "default.Type"),
+            other => panic!("expected a table parameter, got {other:?}"),
+        }
+    }
+}

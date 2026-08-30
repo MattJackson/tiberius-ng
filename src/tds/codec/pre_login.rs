@@ -426,6 +426,42 @@ mod tests {
     }
 
     #[test]
+    fn decode_accepts_zero_length_threadid() {
+        // A THREADID option with length 0 must decode to thread_id 0, not error.
+        // Table entry (token, offset=6, length=0) then the terminator.
+        let mut buf = BytesMut::from(
+            &[
+                PRELOGIN_THREADID,
+                0x00,
+                0x06,
+                0x00,
+                0x00,
+                PRELOGIN_TERMINATOR,
+            ][..],
+        );
+        let decoded = PreloginMessage::decode(&mut buf).expect("zero-length threadid must decode");
+        assert_eq!(decoded.thread_id, 0);
+    }
+
+    #[test]
+    fn decode_reads_nonce_option() {
+        // Table entry for NONCEOPT (offset 6, length 32) + terminator + 32 bytes.
+        let mut bytes = vec![
+            PRELOGIN_NONCEOPT,
+            0x00,
+            0x06,
+            0x00,
+            0x20,
+            PRELOGIN_TERMINATOR,
+        ];
+        bytes.extend_from_slice(&[0xAB; 32]);
+        let mut buf = BytesMut::from(&bytes[..]);
+
+        let decoded = PreloginMessage::decode(&mut buf).expect("nonce option must decode");
+        assert_eq!(decoded.nonce, Some([0xAB; 32]));
+    }
+
+    #[test]
     fn validate_instance_accepts_valid_response() {
         // Server valid response = lone 0x00 -> decoded as `None`.
         let msg = PreloginMessage::new();

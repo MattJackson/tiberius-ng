@@ -489,6 +489,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn result_index_reflects_the_field() {
+        // A non-zero index pins `result_index()` (a `-> 0` mutant would pass if
+        // every fixture used index 0).
+        let columns = Arc::new(vec![Column::new("c".to_string(), ColumnType::Int4)]);
+        let mut data = TokenRow::new();
+        data.push(ColumnData::I32(Some(1)));
+        let row = Row {
+            columns,
+            data,
+            result_index: 3,
+        };
+        assert_eq!(row.result_index(), 3);
+    }
+
     // Regression test for #211: an out-of-range usize index must not panic.
     #[test]
     fn try_get_out_of_range_index_returns_none() {
