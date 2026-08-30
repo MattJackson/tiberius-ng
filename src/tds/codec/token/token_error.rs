@@ -183,4 +183,34 @@ mod tests {
 
         assert_eq!(decoded, sample());
     }
+
+    #[tokio::test]
+    async fn decode_reads_full_four_byte_line_number_on_tds72_plus() {
+        // The default test context reports SqlServerN (>= TDS 7.2), so the
+        // LineNumber must be read as a 4-byte LONG. A `>` mutation of the
+        // `>=` boundary check would read only 2 bytes and mis-decode the value.
+        // 0x0001_0001 (65537) has distinct low-16-bit and full-32-bit values, so
+        // a 2-byte read yields 1 while the correct 4-byte read yields 65537.
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use bytes::{BufMut, BytesMut};
+
+        let mut body = BytesMut::new();
+        body.put_u32_le(1205); // code
+        body.put_u8(2); // state
+        body.put_u8(13); // class
+        body.put_u16_le(0); // message: us_varchar, length 0
+        body.put_u8(0); // server: b_varchar, length 0
+        body.put_u8(0); // procedure: b_varchar, length 0
+        body.put_u32_le(0x0001_0001); // line number, 4 bytes
+
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(body.len() as u16); // length prefix, ignored by decode
+        buf.put_slice(&body);
+
+        let decoded = TokenError::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(decoded.line(), 0x0001_0001);
+    }
 }

@@ -41,3 +41,15 @@ pub use token_type::*;
 /// single 4-byte field could force a multi-gigabyte allocation. Chosen well
 /// above any realistic FEDAUTHINFO / SESSIONSTATE payload.
 pub(crate) const MAX_TOKEN_BODY: usize = 16 * 1024 * 1024;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_token_body_is_sixteen_mebibytes() {
+        // 16 MiB. Guards the `16 * 1024 * 1024` computation against arithmetic
+        // mutation (e.g. `+`/`/` would yield a wildly different cap).
+        assert_eq!(MAX_TOKEN_BODY, 16_777_216);
+    }
+}

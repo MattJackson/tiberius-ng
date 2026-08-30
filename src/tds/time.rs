@@ -559,6 +559,36 @@ mod tests {
 
     #[cfg(feature = "tds73")]
     #[tokio::test]
+    async fn time_round_trip_high_bytes_set() {
+        // Values whose most-significant byte (the byte handled by the
+        // `lo << 16` / `lo << 32` shift in `decode` and the `>> 16` / `>> 32`
+        // shift in `encode`) is non-zero. This distinguishes:
+        //   * decode `<< N` from `>> N` (the latter zeroes an `u8`), and
+        //   * encode `>> N` from `<< N` (the latter zeroes the byte written).
+        // The 16-bit / 32-bit low halves and the shifted high byte occupy
+        // disjoint bit ranges, so `|` vs `^` cannot be distinguished here.
+        for (increments, scale) in [(0x00FF_1234u64, 2u8), (0x00AB_1234_5678u64, 7)] {
+            let time = Time::new(increments, scale);
+            let rlen = time.len().unwrap();
+
+            let mut buf = BytesMut::new();
+            time.encode(&mut buf).unwrap();
+
+            let decoded = Time::decode(
+                &mut buf.into_sql_read_bytes(),
+                scale as usize,
+                rlen as usize,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(decoded, time);
+            assert_eq!(decoded.increments(), increments);
+        }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
     async fn time_decode_invalid_length_errors() {
         let mut buf = BytesMut::new();
         buf.put_u8(0);

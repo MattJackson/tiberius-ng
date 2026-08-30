@@ -294,6 +294,15 @@ mod tests {
     }
 
     #[test]
+    fn sspi_header_type_and_status() {
+        let header = PacketHeader::sspi(7);
+        // Both fields differ from the `PacketHeader::new` defaults
+        // (TDSv7Login / ResetConnection), so a deleted field would be caught.
+        assert_eq!(header.r#type() as u8, PacketType::Sspi as u8);
+        assert_eq!(header.status(), PacketStatus::EndOfMessage);
+    }
+
+    #[test]
     fn batch_header_type_and_status() {
         let header = PacketHeader::batch(7);
         assert_eq!(header.r#type() as u8, PacketType::SQLBatch as u8);

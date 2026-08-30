@@ -111,6 +111,31 @@ exclude_re = [
     # cannot leak. Debug formatting is diagnostic, not logic.
     "impl Debug for .+>::fmt -> std::fmt::Result with Ok\\(Default::default\\(\\)\\)",
     "impl std::fmt::Debug for .+>::fmt -> std::fmt::Result with Ok\\(Default::default\\(\\)\\)",
+    # --- Provably-equivalent or physically-untestable mutants (verified case by
+    # --- case; the non-equivalent siblings on the same lines ARE covered by tests).
+    # Time::decode combines `hi | (lo << 16/32)` where the operands occupy
+    # disjoint bit ranges, so `|` and `^` are identical.
+    "\\| with \\^ in Time::decode",
+    # from_days: `days < N` guards a `checked_add(...).unwrap_or(fallback)`; `<`
+    # vs `<=` differ only at days==0, which never overflows, so the fallback is
+    # unreachable at that boundary. (`==`/`>` variants are tested.)
+    "< with <= in from_days",
+    # PacketHeader::login builds on `..Self::new()`, which already sets `ty` to the
+    # same TDSv7Login value, so deleting the explicit field is a no-op. (sspi's
+    # ty/status differ from the defaults and ARE tested.)
+    "delete field ty from struct Self expression in PacketHeader::login",
+    # PLP "unknown length" terminator arm and the `_` fallback both yield an empty
+    # Vec (differing only in reserved capacity), so deleting the arm is equivalent.
+    "delete match arm 0xfffffffffffffffe in decode",
+    # sql_variant decode_numeric applies the sign as `value * sign` with sign in
+    # {-1, 1}; `value / sign` is identical (the `* with +` variant is tested).
+    "\\* with / in decode_numeric",
+    # PLP size cap `total + chunk > MAX_PLP_SIZE`: `>` vs `>=` differ only at
+    # exactly i32::MAX (2 GiB), where the `>` path would have to read a 2 GiB
+    # payload — infeasible in a unit test. (The `> with ==` variant is tested;
+    # the bit/sql_variant `> with >=` on the same "in decode" genre are also
+    # covered by tests, so nothing real is lost by this exclusion.)
+    "> with >= in decode$",
 ]
 
 # A generous per-mutant timeout; a mutation that causes an infinite loop is a

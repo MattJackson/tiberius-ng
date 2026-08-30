@@ -15,7 +15,7 @@ pub struct TokenDone {
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoneStatus {
-    More = 1 << 0,
+    More = 1, // bit 0 (literal 1: `1 << 0` is shift-invariant)
     Error = 1 << 1,
     Inexact = 1 << 2,
     // reserved
@@ -142,6 +142,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn decode_reads_four_byte_rowcount_on_pre_2005_versions() {
+        // Pre-2005 servers encode the DONE rowcount in 4 bytes; the decoder must
+        // pick the 4-byte arm from the negotiated version (kills "delete arm 4").
+        use crate::sql_read_bytes::SqlReadBytes;
+        use crate::tds::codec::login::FeatureLevel;
+
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(DoneStatus::Count as u16);
+        buf.put_u16_le(0);
+        buf.put_u32_le(7); // 4-byte rowcount
+
+        let mut reader = buf.into_sql_read_bytes();
+        reader
+            .context_mut()
+            .set_version(FeatureLevel::SqlServer2000);
+
+        let done = TokenDone::decode(&mut reader).await.unwrap();
+        assert_eq!(done.rows(), 7);
+    }
+
+    #[tokio::test]
     async fn decode_single_row_display() {
         let mut buf = BytesMut::new();
         buf.put_u16_le(DoneStatus::Count as u16);
@@ -169,6 +190,32 @@ mod tests {
             .expect("reserved status bits must be tolerated");
 
         assert!(done.status.contains(DoneStatus::More));
+    }
+
+    #[tokio::test]
+    async fn is_attention_reflects_attention_status_bit() {
+        // With the Attention bit set, is_attention() must be true.
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(DoneStatus::Attention as u16);
+        buf.put_u16_le(0);
+        buf.put_u64_le(0);
+
+        let done = TokenDone::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+        assert!(done.is_attention());
+
+        // Without the Attention bit (a different, non-attention bit set),
+        // is_attention() must be false.
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(DoneStatus::More as u16);
+        buf.put_u16_le(0);
+        buf.put_u64_le(0);
+
+        let done = TokenDone::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+        assert!(!done.is_attention());
     }
 
     #[test]

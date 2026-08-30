@@ -250,6 +250,31 @@ mod tests {
     }
 
     #[test]
+    fn with_capacity_preallocates() {
+        // with_capacity must actually reserve room; Default::default() would
+        // give a zero-capacity vec.
+        let row = TokenRow::with_capacity(16);
+        assert!(row.is_empty());
+        assert!(row.data.capacity() >= 16);
+    }
+
+    #[test]
+    fn row_bitmap_is_null_checks_correct_bit() {
+        // Only bit 3 is set in the single bitmap byte. is_null must consult that
+        // exact bit; a `<<`->`>>` mutation would look at bit -3 (i.e. 0) and
+        // report the wrong columns.
+        let bitmap = RowBitmap {
+            data: vec![0b0000_1000],
+        };
+
+        assert!(bitmap.is_null(3));
+        assert!(!bitmap.is_null(0));
+        assert!(!bitmap.is_null(1));
+        assert!(!bitmap.is_null(2));
+        assert!(!bitmap.is_null(4));
+    }
+
+    #[test]
     fn into_iter_yields_owned_values() {
         let mut row = TokenRow::new();
         row.push(ColumnData::I32(Some(1)));

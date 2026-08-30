@@ -266,6 +266,42 @@ mod tests {
     use super::*;
     use crate::{FromSql, IntoSql};
 
+    #[test]
+    fn from_days_clamps_on_overflow() {
+        // A day offset far outside the representable `NaiveDate` range forces
+        // the `checked_add_signed` fallback. Positive overflow must clamp to
+        // MAX, negative overflow to MIN. This pins the `days < 0` sign test
+        // (distinguishing it from `==` and `>`).
+        assert_eq!(from_days(200_000_000, 1), NaiveDate::MAX);
+        assert_eq!(from_days(-200_000_000, 1), NaiveDate::MIN);
+    }
+
+    #[test]
+    fn from_sec_fragments_converts() {
+        // 300 sec-fragments (1/300 s units) == exactly one second.
+        assert_eq!(
+            from_sec_fragments(300),
+            NaiveTime::from_hms_opt(0, 0, 1).unwrap()
+        );
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn from_mins_converts() {
+        // `from_mins` takes seconds-from-midnight; 3600 s == 01:00:00.
+        assert_eq!(from_mins(3600), NaiveTime::from_hms_opt(1, 0, 0).unwrap());
+    }
+
+    #[cfg(not(feature = "tds73"))]
+    #[test]
+    fn to_sec_fragments_converts() {
+        // One second == 300 sec-fragments (1/300 s units).
+        assert_eq!(
+            to_sec_fragments(NaiveTime::from_hms_opt(0, 0, 1).unwrap()),
+            300
+        );
+    }
+
     #[cfg(feature = "tds73")]
     #[test]
     fn naive_date_round_trip() {

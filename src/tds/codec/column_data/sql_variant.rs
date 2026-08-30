@@ -717,4 +717,90 @@ mod tests {
 
         assert!(matches!(err, Error::Conversion(_)));
     }
+
+    // A `total_len` of exactly 2 is the smallest valid sql_variant (base type +
+    // prop-bytes count, zero property bytes, empty value). The guard is
+    // `total_len < 2`; mutating `<` to `<=`/`==` would reject this valid value.
+    #[tokio::test]
+    async fn decode_total_len_exactly_two() {
+        let mut buf = BytesMut::new();
+        buf.put_u32_le(2); // total length
+        buf.put_u8(FixedLenType::Bit as u8); // base type
+        buf.put_u8(0); // prop bytes
+        buf.put_u8(1); // the Bit value (read by fixed_len::decode)
+
+        let data = decode(&mut buf.into_sql_read_bytes()).await.unwrap();
+        assert_eq!(data, ColumnData::Bit(Some(true)));
+    }
+
+    // `data_len` of exactly MAX_VARIANT_PAYLOAD (8000) is allowed; the guard is
+    // `data_len > MAX_VARIANT_PAYLOAD`. Mutating `>` to `>=`/`==` would reject a
+    // value that is exactly at the limit.
+    #[tokio::test]
+    async fn decode_data_len_at_max_payload() {
+        let payload_bytes = vec![0x5Au8; MAX_VARIANT_PAYLOAD];
+
+        let mut payload = vec![VarLenType::BigVarBin as u8, 2];
+        payload.extend_from_slice(&40u16.to_le_bytes()); // max length prop
+        payload.extend_from_slice(&payload_bytes);
+
+        let data = decode(&mut variant_reader(&payload)).await.unwrap();
+        assert_eq!(data, ColumnData::Binary(Some(payload_bytes.into())));
+    }
+
+    // The numeric-scale guard is `scale > 38`; a scale of exactly 38 is valid.
+    // Mutating `>` to `>=`/`==` would reject scale 38.
+    #[tokio::test]
+    async fn decode_numeric_scale_at_limit() {
+        let mut payload = vec![VarLenType::Numericn as u8, 2, 38, 38];
+        payload.push(1); // positive sign
+        payload.extend_from_slice(&123u32.to_le_bytes());
+
+        let data = decode(&mut variant_reader(&payload)).await.unwrap();
+        assert_eq!(
+            data,
+            ColumnData::Numeric(Some(Numeric::new_with_scale(123, 38)))
+        );
+    }
+
+    // A 12-byte magnitude is reconstructed as `low + high * (1 << 64)`.
+    // low = 5, high = 3 => 5 + 3 * 2^64. This kills the mutations of the three
+    // operators on that line: `+`->`-`/`*`, `*`->`+`/`/`, and `<<`->`>>`
+    // (which would give 5, 5*3*2^64, 5+(3+2^64), 5+3/2^64=5, and 5+3*1=8
+    // respectively - all different from the true value).
+    #[tokio::test]
+    async fn decode_numeric_twelve_byte_magnitude() {
+        let mut payload = vec![VarLenType::Numericn as u8, 2, 38, 0];
+        payload.push(1); // positive sign
+        payload.extend_from_slice(&5u64.to_le_bytes()); // low 8 bytes
+        payload.extend_from_slice(&3u32.to_le_bytes()); // high 4 bytes
+
+        let expected = 5i128 + 3i128 * (1i128 << 64);
+        let data = decode(&mut variant_reader(&payload)).await.unwrap();
+        assert_eq!(
+            data,
+            ColumnData::Numeric(Some(Numeric::new_with_scale(expected, 0)))
+        );
+    }
+
+    // A string whose UTF-16 encoding is exactly MAX_VARIANT_PAYLOAD (8000)
+    // bytes = 4000 BMP chars is allowed; the guard is `utf16.len() > MAX`.
+    // Mutating `>` to `>=`/`==` would reject a value exactly at the limit.
+    #[tokio::test]
+    async fn encode_string_at_max_payload() {
+        let s: String = "a".repeat(MAX_VARIANT_PAYLOAD / 2);
+        let mut buf = BytesMut::new();
+        encode(&mut buf, ColumnData::String(Some(s.into())))
+            .expect("a string exactly at the limit must encode");
+    }
+
+    // Binary of exactly MAX_VARIANT_PAYLOAD (8000) bytes is allowed; the guard
+    // is `bytes.len() > MAX`. Mutating `>` to `>=`/`==` would reject it.
+    #[tokio::test]
+    async fn encode_binary_at_max_payload() {
+        let bytes = vec![0u8; MAX_VARIANT_PAYLOAD];
+        let mut buf = BytesMut::new();
+        encode(&mut buf, ColumnData::Binary(Some(bytes.into())))
+            .expect("binary exactly at the limit must encode");
+    }
 }

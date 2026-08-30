@@ -190,4 +190,61 @@ mod tests {
 
         assert!(TokenFedAuthInfo::parse(&body).is_err());
     }
+
+    #[tokio::test]
+    async fn decode_reads_length_prefix_and_parses_body() {
+        // Exercises the full `decode` path: reading the 4-byte TokenLength, the
+        // length bound check, reading the body, and parsing it. A mutation that
+        // short-circuits `decode` to `Ok(Default::default())` would drop the
+        // parsed STSURL, and a `<` mutation of the length bound check would
+        // reject this (well-under-maximum) token outright.
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use bytes::{BufMut, BytesMut};
+
+        let sts = utf16le("https://sts.example/");
+
+        let count: u32 = 1;
+        let header_len = 4 + 9; // count + one FedAuthInfoOpt
+        let sts_offset = header_len;
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&count.to_le_bytes());
+        body.push(FED_AUTH_INFO_ID_STSURL);
+        body.extend_from_slice(&(sts.len() as u32).to_le_bytes());
+        body.extend_from_slice(&(sts_offset as u32).to_le_bytes());
+        body.extend_from_slice(&sts);
+
+        let mut buf = BytesMut::new();
+        buf.put_u32_le(body.len() as u32); // TokenLength
+        buf.put_slice(&body);
+
+        let info = TokenFedAuthInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(info.sts_url.as_deref(), Some("https://sts.example/"));
+        assert_eq!(info.spn, None);
+    }
+
+    #[tokio::test]
+    async fn decode_accepts_token_length_at_maximum() {
+        // The length bound check is `token_length > MAX_TOKEN_BODY`, so a token
+        // whose length is exactly MAX_TOKEN_BODY must be accepted. `>=` or `==`
+        // mutations of the `>` would reject it. The body is a valid, empty
+        // (CountOfInfoIDs == 0) token padded out to the maximum length.
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use bytes::{BufMut, BytesMut};
+
+        let token_length = super::super::MAX_TOKEN_BODY;
+
+        let mut buf = BytesMut::new();
+        buf.put_u32_le(token_length as u32); // TokenLength == MAX_TOKEN_BODY
+        buf.put_slice(&vec![0u8; token_length]); // count = 0, rest padding
+
+        let info = TokenFedAuthInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(info, TokenFedAuthInfo::default());
+    }
 }

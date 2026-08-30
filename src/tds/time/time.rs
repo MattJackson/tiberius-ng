@@ -200,6 +200,35 @@ mod tests {
         assert_eq!(decoded.time(), Time::from_hms(0, 0, 0).unwrap());
     }
 
+    #[test]
+    fn from_days_clamps_on_overflow() {
+        // A day offset far outside the representable `time::Date` range forces
+        // the `checked_add` fallback. Positive overflow clamps to MAX, negative
+        // to MIN. Pins the `days < 0` sign test (vs `==` / `>`).
+        assert_eq!(from_days(10_000_000, 1), Date::MAX);
+        assert_eq!(from_days(-10_000_000, 1), Date::MIN);
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn from_secs_converts() {
+        // 3600 s past midnight == 01:00:00 (pins the `+` in `from_secs`).
+        assert_eq!(from_secs(3600), Time::from_hms(1, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn from_sec_fragments_converts() {
+        // 300 sec-fragments (1/300 s units) == exactly one second.
+        assert_eq!(from_sec_fragments(300), Time::from_hms(0, 0, 1).unwrap());
+    }
+
+    #[cfg(not(feature = "tds73"))]
+    #[test]
+    fn to_sec_fragments_converts() {
+        // One second == 300 sec-fragments (1/300 s units).
+        assert_eq!(to_sec_fragments(Time::from_hms(0, 0, 1).unwrap()), 300);
+    }
+
     #[cfg(feature = "tds73")]
     #[test]
     fn time_from_sql_and_back() {

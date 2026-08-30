@@ -83,3 +83,58 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+
+    // The `len` argument selects the wire layout: `len < 0xffff` means a plain
+    // `u16`-prefixed value, otherwise a `u64`-prefixed chunked (PLP) value. At
+    // the boundary `len == 0xffff` the real code takes the chunked branch
+    // (reads a `u64` length). Mutating `<` to `<=` would take the fixed branch
+    // (reads a `u16` length) and produce a different value. We feed a chunked
+    // stream that decodes to [0xAA, 0xBB, 0xCC]; under the `<=` mutant the same
+    // bytes are misread as a `u16` length of 5 followed by five zero bytes.
+    #[tokio::test]
+    async fn decode_boundary_len_uses_chunked_branch() {
+        let mut buf = BytesMut::new();
+        buf.put_u64_le(5); // known-size PLP total length
+        buf.put_u32_le(3); // chunk size
+        buf.put_slice(&[0xAA, 0xBB, 0xCC]);
+        buf.put_u32_le(0); // terminating chunk
+
+        let data = decode(&mut buf.into_sql_read_bytes(), 0xffff)
+            .await
+            .unwrap();
+        assert_eq!(data, Some(vec![0xAA, 0xBB, 0xCC]));
+    }
+
+    // A chunk whose running total strictly exceeds `MAX_PLP_SIZE` must be
+    // rejected with the "exceeds the maximum" protocol error *before* any chunk
+    // data is read. Mutating `>` to `==` would let a strictly-greater total slip
+    // past the guard (the `==` only fires at the exact boundary), so instead of
+    // the protocol error the decoder would try to read a ~4 GiB chunk and fail
+    // with an unrelated read error.
+    #[tokio::test]
+    async fn decode_oversized_chunk_is_rejected() {
+        let mut buf = BytesMut::new();
+        buf.put_u64_le(10); // known-size marker -> chunked branch bookkeeping
+        buf.put_u32_le(u32::MAX); // chunk size well past MAX_PLP_SIZE
+
+        let err = decode(&mut buf.into_sql_read_bytes(), 0x10000)
+            .await
+            .expect_err("oversized PLP chunk must be rejected");
+
+        match err {
+            crate::Error::Protocol(msg) => {
+                assert!(
+                    msg.contains("exceeds the maximum"),
+                    "unexpected protocol message: {msg}"
+                );
+            }
+            other => panic!("expected a protocol error, got {other:?}"),
+        }
+    }
+}
