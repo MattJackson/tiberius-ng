@@ -86,7 +86,8 @@ impl PacketHeader {
 
     pub fn login(id: u8) -> Self {
         Self {
-            ty: PacketType::TDSv7Login,
+            // `ty` is inherited from `new()`, which already defaults to
+            // `TDSv7Login`; only the status differs here.
             status: PacketStatus::EndOfMessage,
             ..Self::new(0, id)
         }

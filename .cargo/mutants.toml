@@ -120,10 +120,11 @@ exclude_re = [
     # vs `<=` differ only at days==0, which never overflows, so the fallback is
     # unreachable at that boundary. (`==`/`>` variants are tested.)
     "< with <= in from_days",
-    # PacketHeader::login builds on `..Self::new()`, which already sets `ty` to the
-    # same TDSv7Login value, so deleting the explicit field is a no-op. (sspi's
-    # ty/status differ from the defaults and ARE tested.)
-    "delete field ty from struct Self expression in PacketHeader::login",
+    # `to_sec_fragments` (chrono & time) is `#[cfg(not(feature = "tds73"))]`
+    # legacy-DATETIME conversion, so under `--features all` (tds73 on) it is not
+    # compiled and its mutants can never be reached by the offline gate. (The
+    # always-compiled `from_days`/`from_sec_fragments` are covered by tests.)
+    "to_sec_fragments",
     # PLP "unknown length" terminator arm and the `_` fallback both yield an empty
     # Vec (differing only in reserved capacity), so deleting the arm is equivalent.
     "delete match arm 0xfffffffffffffffe in decode",
