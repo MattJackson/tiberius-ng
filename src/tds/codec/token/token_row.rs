@@ -224,4 +224,144 @@ mod tests {
             .expect_err("ROW before COLMETADATA must error");
         assert!(matches!(err, crate::Error::Protocol(_)));
     }
+
+    #[test]
+    fn basic_container_operations() {
+        let mut row = TokenRow::new();
+        assert!(row.is_empty());
+        assert_eq!(row.len(), 0);
+        assert_eq!(row.get(0), None);
+
+        row.push(ColumnData::I32(Some(1)));
+        row.push(ColumnData::I32(Some(2)));
+        assert_eq!(row.len(), 2);
+        assert!(!row.is_empty());
+        assert_eq!(row.get(0), Some(&ColumnData::I32(Some(1))));
+        assert_eq!(row.get(5), None);
+
+        let collected: Vec<_> = row.iter().collect();
+        assert_eq!(collected.len(), 2);
+
+        row.clear();
+        assert!(row.is_empty());
+
+        let with_cap = TokenRow::with_capacity(4);
+        assert!(with_cap.is_empty());
+    }
+
+    #[test]
+    fn into_iter_yields_owned_values() {
+        let mut row = TokenRow::new();
+        row.push(ColumnData::I32(Some(1)));
+        row.push(ColumnData::I32(Some(2)));
+
+        let values: Vec<_> = row.into_iter().collect();
+        assert_eq!(
+            values,
+            vec![ColumnData::I32(Some(1)), ColumnData::I32(Some(2))]
+        );
+    }
+
+    #[tokio::test]
+    async fn encode_matching_columns_round_trip() {
+        let row = (true, 5i32).into_row();
+        let columns = vec![
+            MetaDataColumn {
+                base: BaseMetaDataColumn {
+                    flags: ColumnFlag::Nullable.into(),
+                    ty: TypeInfo::FixedLen(FixedLenType::Bit),
+                },
+                col_name: Default::default(),
+            },
+            MetaDataColumn {
+                base: BaseMetaDataColumn {
+                    flags: ColumnFlag::Nullable.into(),
+                    ty: TypeInfo::FixedLen(FixedLenType::Int4),
+                },
+                col_name: Default::default(),
+            },
+        ];
+        let mut buf = BytesMut::new();
+        let mut buf_with_columns = BytesMutWithDataColumns::new(&mut buf, &columns);
+
+        row.encode(&mut buf_with_columns).unwrap();
+        assert!(!buf.is_empty());
+    }
+
+    #[tokio::test]
+    async fn decode_reads_columns_from_cached_meta() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use crate::tds::codec::TokenColMetaData;
+        use std::sync::Arc;
+
+        let col_meta = TokenColMetaData {
+            columns: vec![MetaDataColumn {
+                base: BaseMetaDataColumn {
+                    flags: ColumnFlag::Nullable.into(),
+                    ty: TypeInfo::FixedLen(FixedLenType::Int4),
+                },
+                col_name: Default::default(),
+            }],
+        };
+
+        let mut buf = BytesMut::new();
+        buf.put_i32_le(42);
+
+        let mut reader = buf.into_sql_read_bytes();
+        reader.context_mut().set_last_meta(Arc::new(col_meta));
+
+        let row = TokenRow::decode(&mut reader).await.unwrap();
+        assert_eq!(row.len(), 1);
+        assert_eq!(row.get(0), Some(&ColumnData::I32(Some(42))));
+    }
+
+    #[tokio::test]
+    async fn decode_nbc_before_colmetadata_is_protocol_error() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        let buf = BytesMut::new();
+        let err = TokenRow::decode_nbc(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("NBCROW before COLMETADATA must error");
+        assert!(matches!(err, crate::Error::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn decode_nbc_uses_bitmap_for_nulls() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use crate::tds::codec::TokenColMetaData;
+        use std::sync::Arc;
+
+        // Two int columns: first null (bit 0 set), second present (value 7).
+        let col_meta = TokenColMetaData {
+            columns: vec![
+                MetaDataColumn {
+                    base: BaseMetaDataColumn {
+                        flags: ColumnFlag::Nullable.into(),
+                        ty: TypeInfo::FixedLen(FixedLenType::Int4),
+                    },
+                    col_name: Default::default(),
+                },
+                MetaDataColumn {
+                    base: BaseMetaDataColumn {
+                        flags: ColumnFlag::Nullable.into(),
+                        ty: TypeInfo::FixedLen(FixedLenType::Int4),
+                    },
+                    col_name: Default::default(),
+                },
+            ],
+        };
+
+        let mut buf = BytesMut::new();
+        buf.put_u8(0b0000_0001); // bitmap: column 0 is null
+        buf.put_i32_le(7); // column 1's value
+
+        let mut reader = buf.into_sql_read_bytes();
+        reader.context_mut().set_last_meta(Arc::new(col_meta));
+
+        let row = TokenRow::decode_nbc(&mut reader).await.unwrap();
+        assert_eq!(row.len(), 2);
+        assert_eq!(row.get(0), Some(&ColumnData::I32(None)));
+        assert_eq!(row.get(1), Some(&ColumnData::I32(Some(7))));
+    }
 }
