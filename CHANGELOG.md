@@ -499,5 +499,3 @@ has completely settled on Tokio 1.0.
 
 [Unreleased]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.0...HEAD
 [0.13.0]: https://github.com/MattJackson/tiberius-ng/compare/v0.12.3...v0.13.0
-</content>
-</invoke>
