@@ -27,3 +27,34 @@ where
 
     Ok(ColumnData::Binary(Some(buf.into())))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+
+    #[tokio::test]
+    async fn decode_null_when_ptr_len_zero() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(0);
+
+        let data = decode(&mut buf.into_sql_read_bytes()).await.unwrap();
+        assert_eq!(data, ColumnData::Binary(None));
+    }
+
+    #[tokio::test]
+    async fn decode_reads_pointer_timestamp_and_payload() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(2); // ptr_len
+        buf.put_u8(0xAA);
+        buf.put_u8(0xBB); // pointer bytes (ignored)
+        buf.put_i32_le(0); // days (ignored)
+        buf.put_u32_le(0); // second fractions (ignored)
+        buf.put_u32_le(3); // payload len
+        buf.put_slice(&[1, 2, 3]);
+
+        let data = decode(&mut buf.into_sql_read_bytes()).await.unwrap();
+        assert_eq!(data, ColumnData::Binary(Some(vec![1, 2, 3].into())));
+    }
+}
