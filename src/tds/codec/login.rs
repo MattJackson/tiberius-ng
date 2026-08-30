@@ -130,12 +130,25 @@ pub(crate) const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
 pub(crate) const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 struct FedAuthExt<'a> {
     fed_auth_echo: bool,
     fed_auth_token: Cow<'a, str>,
     nonce: Option<[u8; 32]>,
+}
+
+// Manual Debug so the AAD bearer token is never printed. `LoginMessage`'s own
+// Debug redacts the SQL password; this keeps the federated-auth token redacted
+// too (its derived Debug would otherwise leak the full token via that field).
+impl std::fmt::Debug for FedAuthExt<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FedAuthExt")
+            .field("fed_auth_echo", &self.fed_auth_echo)
+            .field("fed_auth_token", &"<HIDDEN>")
+            .field("nonce", &self.nonce.map(|_| "<present>"))
+            .finish()
+    }
 }
 
 /// the login packet
@@ -747,5 +760,18 @@ mod tests {
         let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
 
         assert_eq!(login, decoded);
+    }
+
+    #[test]
+    fn debug_redacts_fed_auth_token() {
+        let mut login = LoginMessage::new();
+        login.aad_token("super-secret-aad-token", true, Some([9u8; 32]));
+
+        let dbg = format!("{login:?}");
+        assert!(
+            !dbg.contains("super-secret-aad-token"),
+            "AAD token leaked in Debug output: {dbg}"
+        );
+        assert!(dbg.contains("HIDDEN"));
     }
 }
