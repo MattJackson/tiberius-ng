@@ -438,7 +438,12 @@ impl Row {
             Error::Conversion(format!("Could not find column with index {}", idx).into())
         })?;
 
-        Ok(self.data.get(idx).unwrap())
+        // `idx` was validated against the column metadata; the cell should exist,
+        // but a malformed ROW/NBCROW with fewer cells than columns must not
+        // panic here — return an error instead of unwrapping.
+        self.data.get(idx).ok_or_else(|| {
+            Error::Protocol(format!("row has no data for column index {idx}").into())
+        })
     }
 
     /// Consumes the row, returning the underlying [`TokenRow`] holding the raw
