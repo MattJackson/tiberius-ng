@@ -44,9 +44,13 @@ jobs:
       - name: Unit tests
         run: cargo test --lib --features all
       - name: Package (dry-run)
-        run: |
-          cargo publish -p tiberius-ng-macros --dry-run
-          cargo publish -p tiberius-ng --dry-run
+        # `--workspace` publishes members in dependency order and, during the
+        # dry run, verifies `tiberius-ng` against a temp registry copy of the
+        # not-yet-published `tiberius-ng-macros`. Running the two crates as
+        # separate `-p ... --dry-run` invocations would fail here on the first
+        # release (macros not on crates.io yet). `runtimes-macro` is skipped
+        # automatically (publish = false).
+        run: cargo publish --workspace --dry-run
 
   publish:
     name: publish to crates.io
@@ -64,9 +68,10 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install -y openssl libkrb5-dev
       - name: Publish (macro crate first, then the library)
-        run: |
-          cargo publish -p tiberius-ng-macros --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-          cargo publish -p tiberius-ng --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        # `--workspace` publishes in dependency order (tiberius-ng-macros before
+        # tiberius-ng) in a single coordinated invocation, waiting for the index
+        # to update between them. `runtimes-macro` is skipped (publish = false).
+        run: cargo publish --workspace --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Create GitHub release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.4.0
         with:
