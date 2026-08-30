@@ -39,19 +39,22 @@ user_data() {
 #!/bin/bash
 set -x
 exec > /var/log/mutants.log 2>&1
-dnf install -y git gcc openssl-devel awscli
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source \$HOME/.cargo/env
+S3="s3://$BUCKET/shard-$shard"
+finish() { aws s3 cp /var/log/mutants.log "\$S3/log" || true; aws s3 cp - "\$S3/done" <<< "done" || true; shutdown -h now; }
+trap finish EXIT
+# System build deps for `--features all` (TLS backends + Kerberos/GSSAPI).
+dnf install -y git gcc gcc-c++ make cmake openssl-devel pkgconf perl krb5-devel awscli
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup
+export PATH=/root/.cargo/bin:\$PATH
+aws s3 cp - "\$S3/started" <<< "started"
 cargo install cargo-mutants --version '^27' --locked
 cd /root
 git clone --depth 1 --branch "\${REF_BRANCH:-dev}" "$REPO_URL" repo || git clone "$REPO_URL" repo
 cd repo
 git checkout "$REF"
-aws s3 cp - "s3://$BUCKET/shard-$shard/started" <<< "started"
 cargo mutants --features all --shard "$shard/$N" --in-place -j "\$(nproc)" --output out || true
-aws s3 cp --recursive out/mutants.out "s3://$BUCKET/shard-$shard/" || true
-aws s3 cp - "s3://$BUCKET/shard-$shard/done" <<< "done"
-shutdown -h now
+aws s3 cp --recursive out/mutants.out "\$S3/" || true
 EOF
 }
 
@@ -91,7 +94,7 @@ run)
   done
 
   log "waiting for shards to finish (writing done markers to s3://$BUCKET)..."
-  for i in $(seq 1 120); do
+  for i in $(seq 1 300); do
     done=$(aws s3 ls "s3://$BUCKET/" --recursive | grep -c '/done' || true)
     log "  $done/$N shards done"
     [ "$done" -ge "$N" ] && break
