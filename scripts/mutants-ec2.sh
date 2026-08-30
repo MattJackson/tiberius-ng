@@ -43,7 +43,8 @@ S3="s3://$BUCKET/shard-$shard"
 finish() { aws s3 cp /var/log/mutants.log "\$S3/log" || true; aws s3 cp - "\$S3/done" <<< "done" || true; shutdown -h now; }
 trap finish EXIT
 # System build deps for the 'all' feature set (TLS backends + Kerberos/GSSAPI).
-dnf install -y git gcc gcc-c++ make cmake openssl-devel pkgconf perl krb5-devel awscli
+dnf install -y git gcc gcc-c++ make cmake openssl-devel pkgconf perl krb5-devel clang clang-libs awscli
+export LIBCLANG_PATH=/usr/lib64
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup
 export PATH=/root/.cargo/bin:\$PATH
