@@ -871,7 +871,12 @@ pub(crate) trait ConfigString {
                 )),
                 Err(e) => Err(e),
             })
-            .unwrap_or(Ok(EncryptionLevel::Off))
+            // When the `encrypt` keyword is omitted, default to requiring
+            // encryption — matching `Config::default()` and modern ADO.NET
+            // (`Encrypt=Mandatory`). Callers who want an unencrypted connection
+            // must opt out explicitly with `encrypt=false` (or
+            // `encrypt=DANGER_PLAINTEXT`).
+            .unwrap_or(Ok(EncryptionLevel::Required))
     }
 
     #[cfg(not(any(

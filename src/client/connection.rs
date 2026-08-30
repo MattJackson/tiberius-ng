@@ -361,22 +361,42 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Calling this will slow down the queries if stream is still dirty if all
     /// results are not handled.
     pub async fn flush_stream(&mut self) -> crate::Result<()> {
+        // If a previous write was cancelled mid-message the connection is
+        // already known-bad; fail fast rather than layering a new request on
+        // top of it.
+        self.ensure_not_poisoned()?;
+
+        // Discard any partially-consumed packet payload, then drain whole
+        // packets up to the end-of-message marker. Truncating `buf` and
+        // re-reading on packet boundaries resynchronises the token stream even
+        // if a previous result stream was dropped part-way through a value
+        // (the lost bytes belonged to a packet we are discarding anyway).
         self.buf.truncate(0);
 
         if self.flushed {
             return Ok(());
         }
 
-        while let Some(packet) = self.try_next().await? {
-            event!(
-                Level::WARN,
-                "Flushing unhandled packet from the wire. Please consume your streams!",
-            );
+        loop {
+            match self.try_next().await {
+                Ok(Some(packet)) => {
+                    event!(
+                        Level::WARN,
+                        "Flushing unhandled packet from the wire. Please consume your streams!",
+                    );
 
-            let is_last = packet.is_last();
-
-            if is_last {
-                break;
+                    if packet.is_last() {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                // The stream could not be drained cleanly (e.g. it was
+                // abandoned at an unrecoverable offset). Poison the connection
+                // so it is not silently reused in an inconsistent state.
+                Err(e) => {
+                    self.poisoned = true;
+                    return Err(e);
+                }
             }
         }
 

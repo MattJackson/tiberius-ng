@@ -465,7 +465,7 @@ mod tests {
         let test_str = "";
         let ado: AdoNetConfig = test_str.parse()?;
 
-        assert_eq!(EncryptionLevel::Off, ado.encrypt()?);
+        assert_eq!(EncryptionLevel::Required, ado.encrypt()?);
 
         Ok(())
     }

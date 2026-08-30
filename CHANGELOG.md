@@ -32,6 +32,34 @@ here as they land.
 - (Backlog) Ongoing dependency maintenance to keep the crate free of security
   advisories.
 
+## [0.13.1] - 2026-08-30
+
+A follow-up "polish" patch on top of the 0.13.0 release.
+
+### Changed
+
+- **Connection-string encryption now defaults to `Required`.** When an
+  ADO.NET/JDBC connection string omits the `encrypt` keyword, the negotiated
+  encryption level is now `Required` (matching `Config::default()` and modern
+  ADO.NET's `Encrypt=Mandatory`) instead of `Off`. Opt out explicitly with
+  `encrypt=false` (or `encrypt=DANGER_PLAINTEXT`). *Behavior change* for
+  connection strings that relied on the previous plaintext default.
+
+### Fixed
+
+- **Read-side connection safety.** If a result stream is abandoned partway
+  through (e.g. a cancelled `query`/`execute` future), `flush_stream` now
+  poisons the connection when it cannot drain cleanly, so the connection fails
+  fast on next use instead of being silently reused in an inconsistent state
+  (complementing the send-side poisoning added in 0.13.0).
+
+### Developer experience
+
+- **`#[derive(TableValueRow)]`** now reports unsupported inputs (enums, unions,
+  tuple/unit structs, multiple lifetimes) with a proper `compile_error!` at the
+  offending span instead of panicking, and documents the supported column field
+  types.
+
 ## [0.13.0] - 2026-08-29
 
 First release of the actively-maintained community fork, by
@@ -512,5 +540,6 @@ has completely settled on Tokio 1.0.
 - Support for many more types
 - Async/await, futures 0.3
 
-[Unreleased]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/MattJackson/tiberius-ng/compare/v0.12.3...v0.13.0
