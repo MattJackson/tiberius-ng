@@ -225,7 +225,11 @@ impl BaseMetaDataColumn {
                 VarLenType::NVarchar => ColumnData::String(None),
                 VarLenType::NChar => ColumnData::String(None),
                 VarLenType::Xml => ColumnData::Xml(None),
-                VarLenType::Udt => todo!("User-defined types not supported"),
+                // A null CLR UDT carries no payload; surface it as a null
+                // binary, matching `udt::decode` (which yields
+                // `ColumnData::Binary`). Previously this panicked via `todo!()`,
+                // which a bulk insert of a NULL UDT column could reach.
+                VarLenType::Udt => ColumnData::Binary(None),
                 VarLenType::Text => ColumnData::String(None),
                 VarLenType::Image => ColumnData::Binary(None),
                 VarLenType::NText => ColumnData::String(None),
@@ -257,7 +261,11 @@ impl BaseMetaDataColumn {
                 VarLenType::NVarchar => ColumnData::String(None),
                 VarLenType::NChar => ColumnData::String(None),
                 VarLenType::Xml => ColumnData::Xml(None),
-                VarLenType::Udt => todo!("User-defined types not supported"),
+                // A null CLR UDT carries no payload; surface it as a null
+                // binary, matching `udt::decode` (which yields
+                // `ColumnData::Binary`). Previously this panicked via `todo!()`,
+                // which a bulk insert of a NULL UDT column could reach.
+                VarLenType::Udt => ColumnData::Binary(None),
                 VarLenType::Text => ColumnData::String(None),
                 VarLenType::Image => ColumnData::Binary(None),
                 VarLenType::NText => ColumnData::String(None),

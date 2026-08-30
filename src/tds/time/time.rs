@@ -15,7 +15,25 @@ fn from_days(days: i64, start_year: i32) -> Date {
     // before `start_year`, e.g. `datetime` values prior to 1900) do not
     // overflow. Casting a negative day count into an unsigned type and
     // multiplying it out panics with "multiply with overflow".
-    Date::from_calendar_date(start_year, Month::January, 1).unwrap() + time::Duration::days(days)
+    //
+    // `days` ultimately comes from untrusted server bytes, so a malformed value
+    // can land outside the range `time::Date` can represent. Use `checked_add`
+    // and clamp to the type's bounds instead of panicking with "resulting value
+    // is out of range".
+    let base = Date::from_calendar_date(start_year, Month::January, 1).unwrap();
+    base.checked_add(time::Duration::days(days))
+        .unwrap_or(if days < 0 { Date::MIN } else { Date::MAX })
+}
+
+/// Convert a server-supplied fractional-seconds `increments` at the given
+/// `scale` into nanoseconds without panicking. `scale` and `increments` are
+/// untrusted; a `scale > 9` would otherwise underflow `9 - scale`, and a large
+/// `increments` would overflow the multiply.
+#[inline]
+#[cfg(feature = "tds73")]
+fn nanos_from_increments(increments: u64, scale: u8) -> u64 {
+    let pow = 9u32.saturating_sub(scale as u32);
+    increments.saturating_mul(10u64.saturating_pow(pow))
 }
 
 #[inline]
@@ -54,7 +72,7 @@ from_sql!(
         )),
         ColumnData::DateTime2(ref dt) => dt.map(|dt| PrimitiveDateTime::new(
             from_days(dt.date.days() as i64, 1),
-            Time::from_hms(0,0,0).unwrap() + Duration::from_nanos(dt.time.increments * 10u64.pow(9 - dt.time.scale as u32))
+            Time::from_hms(0,0,0).unwrap() + Duration::from_nanos(nanos_from_increments(dt.time.increments, dt.time.scale))
         )),
         ColumnData::DateTime(ref dt) => dt.map(|dt| PrimitiveDateTime::new(
             from_days(dt.days as i64, 1900),
@@ -62,7 +80,7 @@ from_sql!(
         ));
     Time:
         ColumnData::Time(ref time) => time.map(|time| {
-            let ns = time.increments * 10u64.pow(9 - time.scale as u32);
+            let ns = nanos_from_increments(time.increments, time.scale);
             Time::from_hms(0,0,0).unwrap() + Duration::from_nanos(ns)
         });
     Date:
@@ -73,9 +91,12 @@ from_sql!(
             let dt = dto.datetime2;
 
             let time = Time::from_hms(0,0,0).unwrap()
-                + Duration::from_nanos(dt.time.increments * 10u64.pow(9 - dt.time.scale as u32));
+                + Duration::from_nanos(nanos_from_increments(dt.time.increments, dt.time.scale));
 
-            let offset = UtcOffset::from_whole_seconds(dto.offset as i32 * 60).unwrap();
+            // A malformed server offset outside ±14h is not representable by
+            // `UtcOffset`; fall back to UTC rather than panicking.
+            let offset = UtcOffset::from_whole_seconds(dto.offset as i32 * 60)
+                .unwrap_or(UtcOffset::UTC);
 
             date.with_time(time).assume_utc().to_offset(offset)
         })

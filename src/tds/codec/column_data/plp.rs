@@ -53,9 +53,23 @@ where
 
                     if chunk_size == 0 {
                         break; // found a sentinel, we're done
-                    } else {
-                        chunk_data_left = chunk_size;
                     }
+
+                    // The number of chunks in an "unknown length" PLP value is
+                    // unbounded on the wire. Cap the running total so a hostile
+                    // server cannot stream chunks forever and exhaust memory on
+                    // a single value.
+                    if data.len().saturating_add(chunk_size) > super::MAX_PLP_SIZE {
+                        return Err(crate::Error::Protocol(
+                            format!(
+                                "PLP value exceeds the maximum supported size of {} bytes",
+                                super::MAX_PLP_SIZE
+                            )
+                            .into(),
+                        ));
+                    }
+
+                    chunk_data_left = chunk_size;
                 } else {
                     // Read a byte (packet-aware).
                     let byte = src.read_u8().await?;

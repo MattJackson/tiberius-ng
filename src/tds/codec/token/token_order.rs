@@ -13,7 +13,10 @@ impl TokenOrder {
     {
         let len = src.read_u16_le().await? / 2;
 
-        let mut column_indexes = Vec::with_capacity(len as usize);
+        // `len` is derived from an untrusted u16; cap the up-front reservation
+        // (the Vec still grows as indexes are actually read).
+        let mut column_indexes =
+            Vec::with_capacity((len as usize).min(crate::tds::codec::column_data::MAX_PREALLOC));
 
         for _ in 0..len {
             column_indexes.push(src.read_u16_le().await?);

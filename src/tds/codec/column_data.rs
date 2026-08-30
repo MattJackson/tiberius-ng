@@ -35,6 +35,15 @@ mod xml;
 /// a short/lying length still fails cleanly when the read runs out of input.
 pub(crate) const MAX_PREALLOC: usize = 8 * 1024;
 
+/// Absolute ceiling on the *total* size of a single PLP (partially
+/// length-prefixed) value — `varchar(max)`, `nvarchar(max)`, `varbinary(max)`,
+/// `xml`, and CLR UDTs. SQL Server's own MAX types top out at `2^31 - 1` bytes,
+/// so any value that would grow past this is malformed. Without this bound the
+/// "unknown length" PLP form (which streams an arbitrary number of chunks until
+/// a zero-length terminator) lets a hostile server grow the accumulation buffer
+/// without limit and OOM the client on a single column value.
+pub(crate) const MAX_PLP_SIZE: usize = i32::MAX as usize;
+
 use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 #[cfg(feature = "tds73")]
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};

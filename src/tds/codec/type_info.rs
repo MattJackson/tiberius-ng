@@ -115,11 +115,16 @@ impl Encode<BytesMut> for VarLenContext {
 
         // length
         match self.r#type {
+            // DATE (0x28) carries NO scale byte in TYPE_INFO (MS-TDS
+            // §2.2.5.4.2 / §2.2.5.5.1.2), unlike TIME/DATETIME2/DATETIMEOFFSET
+            // which each carry a SCALE byte. The decoder already special-cases
+            // this (`Daten => 3`, reading no byte); emitting a byte here would
+            // desync every field after a `date` column in a TYPE_INFO stream
+            // (bulk-load column metadata / TVP).
             #[cfg(feature = "tds73")]
-            VarLenType::Daten
-            | VarLenType::Timen
-            | VarLenType::DatetimeOffsetn
-            | VarLenType::Datetime2 => {
+            VarLenType::Daten => {}
+            #[cfg(feature = "tds73")]
+            VarLenType::Timen | VarLenType::DatetimeOffsetn | VarLenType::Datetime2 => {
                 dst.put_u8(self.len() as u8);
             }
             VarLenType::Bitn
@@ -198,12 +203,12 @@ uint_enum! {
         NVarchar = 0xE7,
         NChar = 0xEF,
         Xml = 0xF1,
-        // not supported yet
+        // CLR user-defined type; decoded as raw PLP bytes (see column_data/udt.rs).
         Udt = 0xF0,
         Text = 0x23,
         Image = 0x22,
         NText = 0x63,
-        // not supported yet
+        // sql_variant; fully decoded/encoded (see column_data/sql_variant.rs).
         SSVariant = 0x62, // legacy types (not supported since post-7.2):
                           // Char = 0x2F,
                           // Binary = 0x2D,
@@ -238,12 +243,12 @@ uint_enum! {
         NVarchar = 0xE7,
         NChar = 0xEF,
         Xml = 0xF1,
-        // not supported yet
+        // CLR user-defined type; decoded as raw PLP bytes (see column_data/udt.rs).
         Udt = 0xF0,
         Text = 0x23,
         Image = 0x22,
         NText = 0x63,
-        // not supported yet
+        // sql_variant; fully decoded/encoded (see column_data/sql_variant.rs).
         SSVariant = 0x62, // legacy types (not supported since post-7.2):
                           // Char = 0x2F,
                           // Binary = 0x2D,
@@ -513,5 +518,39 @@ mod tests {
 
             assert_eq!(nti, ti)
         }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn date_typeinfo_round_trips_without_scale_byte() {
+        // DATE (0x28) has no scale byte in TYPE_INFO: encode must emit only the
+        // type token, and it must round-trip through decode.
+        let ti = TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None));
+        let mut buf = BytesMut::new();
+        ti.clone().encode(&mut buf).expect("encode must succeed");
+
+        assert_eq!(buf.as_ref(), &[VarLenType::Daten as u8]);
+
+        let nti = TypeInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect("decode must succeed");
+        assert_eq!(nti, ti);
+    }
+
+    #[tokio::test]
+    async fn decode_rejects_out_of_range_precision_scale() {
+        // Decimaln TYPE_INFO: [type][size][precision][scale]. A precision > 38
+        // from an untrusted server must be rejected rather than flowing into
+        // Numeric decoding (which would later panic on an impossible scale).
+        let mut buf = BytesMut::new();
+        buf.put_u8(VarLenType::Decimaln as u8);
+        buf.put_u8(17); // size
+        buf.put_u8(200); // precision (invalid, > 38)
+        buf.put_u8(2); // scale
+
+        let err = TypeInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("out-of-range precision must error");
+        assert!(matches!(err, Error::Protocol(_)));
     }
 }

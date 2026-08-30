@@ -14,12 +14,30 @@ use crate::tds::codec::ColumnData;
 #[cfg_attr(docsrs, doc(cfg(feature = "tds73")))]
 pub use chrono::offset::{FixedOffset, Utc};
 pub use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
-#[cfg(feature = "tds73")]
-use std::ops::Sub;
 
 #[inline]
 fn from_days(days: i64, start_year: i32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(start_year, 1, 1).unwrap() + chrono::Duration::days(days)
+    // `days` derives from untrusted server bytes; clamp to the representable
+    // range instead of panicking on overflow.
+    let base = NaiveDate::from_ymd_opt(start_year, 1, 1).unwrap();
+    base.checked_add_signed(chrono::Duration::days(days))
+        .unwrap_or(if days < 0 {
+            NaiveDate::MIN
+        } else {
+            NaiveDate::MAX
+        })
+}
+
+/// Convert a server-supplied fractional-seconds `increments` at the given
+/// `scale` into nanoseconds without panicking (`scale > 9` would underflow
+/// `9 - scale`; a large `increments` would overflow the multiply).
+#[inline]
+#[cfg(feature = "tds73")]
+fn nanos_from_increments(increments: u64, scale: u8) -> i64 {
+    let pow = 9u32.saturating_sub(scale as u32);
+    increments
+        .saturating_mul(10u64.saturating_pow(pow))
+        .min(i64::MAX as u64) as i64
 }
 
 #[inline]
@@ -59,7 +77,7 @@ from_sql!(
         )),
         ColumnData::DateTime2(ref dt) => dt.map(|dt| NaiveDateTime::new(
             from_days(dt.date.days() as i64, 1),
-            NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(dt.time.increments as i64 * 10i64.pow(9 - dt.time.scale as u32))
+            NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(nanos_from_increments(dt.time.increments, dt.time.scale))
         )),
         ColumnData::DateTime(ref dt) => dt.map(|dt| NaiveDateTime::new(
             from_days(dt.days as i64, 1900),
@@ -67,7 +85,7 @@ from_sql!(
         ));
     NaiveTime:
         ColumnData::Time(ref time) => time.map(|time| {
-            let ns = time.increments as i64 * 10i64.pow(9 - time.scale as u32);
+            let ns = nanos_from_increments(time.increments, time.scale);
             NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns)
         });
     NaiveDate:
@@ -75,17 +93,18 @@ from_sql!(
     chrono::DateTime<Utc>:
         ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
             let date = from_days(dto.datetime2.date.days() as i64, 1);
-            let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
+            let ns = nanos_from_increments(dto.datetime2.time.increments, dto.datetime2.time.scale);
             let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
 
             let offset = chrono::Duration::minutes(dto.offset as i64);
-            let naive = NaiveDateTime::new(date, time).sub(offset);
+            let base = NaiveDateTime::new(date, time);
+            let naive = base.checked_sub_signed(offset).unwrap_or(base);
 
             chrono::DateTime::from_naive_utc_and_offset(naive, Utc)
         }),
         ColumnData::DateTime2(ref dt2) => dt2.map(|dt2| {
             let date = from_days(dt2.date.days() as i64, 1);
-            let ns = dt2.time.increments as i64 * 10i64.pow(9 - dt2.time.scale as u32);
+            let ns = nanos_from_increments(dt2.time.increments, dt2.time.scale);
             let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
             let naive = NaiveDateTime::new(date, time);
 
@@ -93,10 +112,10 @@ from_sql!(
         });
     chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
         let date = from_days(dto.datetime2.date.days() as i64, 1);
-        let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
+        let ns = nanos_from_increments(dto.datetime2.time.increments, dto.datetime2.time.scale);
         let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
 
-        let offset = FixedOffset::east_opt((dto.offset as i32) * 60).unwrap();
+        let offset = FixedOffset::east_opt((dto.offset as i32) * 60).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
         let naive = NaiveDateTime::new(date, time);
 
         chrono::DateTime::from_naive_utc_and_offset(naive, offset)

@@ -71,6 +71,23 @@ impl TokenSessionState {
                 short_len as usize
             };
 
+            // `state_len` (up to a full u32 via the 0xFF LONG escape) is
+            // untrusted. Even though the outer token body is capped at
+            // MAX_TOKEN_BODY, a single entry could still declare ~4GiB while the
+            // token itself is only a few bytes on the wire. Reject any length
+            // that cannot possibly fit in the remaining buffered bytes before
+            // allocating, so `vec![0u8; state_len]` can't be used for
+            // memory exhaustion.
+            let remaining = total - buf.position();
+            if state_len as u64 > remaining {
+                return Err(Error::Protocol(
+                    format!(
+                        "SESSIONSTATE entry length {state_len} exceeds the {remaining} bytes remaining in the token"
+                    )
+                    .into(),
+                ));
+            }
+
             let mut value = vec![0u8; state_len];
             buf.read_exact(&mut value)?;
 
@@ -168,5 +185,22 @@ mod tests {
         assert_eq!(token.states[0].id, 2);
         assert_eq!(token.states[0].value.len(), 300);
         assert!(token.states[0].value.iter().all(|&b| b == 0x5A));
+    }
+
+    #[test]
+    fn parse_rejects_oversized_state_len() {
+        // A single entry whose declared StateLen (~4GiB via the 0xFF escape) far
+        // exceeds the bytes actually present must error, not attempt the
+        // allocation.
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes()); // SeqNo
+        body.push(0x00); // Status
+        body.push(0x01); // StateId
+        body.push(0xFF); // long-length escape
+        body.extend_from_slice(&0xFFFF_FFF0u32.to_le_bytes()); // StateLen ~4GiB
+                                                               // ...but no value bytes follow.
+
+        let err = TokenSessionState::parse(body).expect_err("oversized StateLen must be rejected");
+        assert!(matches!(err, Error::Protocol(_)));
     }
 }

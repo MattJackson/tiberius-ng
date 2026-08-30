@@ -110,10 +110,10 @@ impl Numeric {
                 _ => unreachable!(),
             };
 
-            // swap high&low for big endian
-            #[cfg(target_endian = "big")]
-            let (low_part, high_part) = (high_part, low_part);
-
+            // `byteorder::LittleEndian` already yields the correct host-native
+            // integer regardless of target endianness, so `low_part`/`high_part`
+            // need no further swapping (a previous `cfg(target_endian = "big")`
+            // swap here corrupted large decimals on big-endian hosts).
             let high_part = high_part * (u64::MAX as u128 + 1);
             low_part + high_part
         }
@@ -144,7 +144,17 @@ impl Numeric {
                     for item in &mut bytes {
                         *item = src.read_u8().await?;
                     }
-                    decode_d128(&bytes) as i128 * sign
+                    let magnitude = decode_d128(&bytes);
+                    // A legal `decimal(38, s)` magnitude is < 10^38 < i128::MAX,
+                    // so any 16-byte magnitude that does not fit in i128 is
+                    // malformed. Reject it rather than letting `as i128` wrap to
+                    // a negative value (and `i128::MIN * -1` overflow-panic).
+                    if magnitude > i128::MAX as u128 {
+                        return Err(Error::Protocol(
+                            "decimal/numeric: magnitude exceeds the representable range".into(),
+                        ));
+                    }
+                    magnitude as i128 * sign
                 }
                 x => {
                     return Err(Error::Protocol(
@@ -160,7 +170,9 @@ impl Numeric {
 
 impl Encode<BytesMut> for Numeric {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        dst.put_u8(self.len());
+        // `len()` recomputes `precision()` via a division loop; compute it once.
+        let len = self.len();
+        dst.put_u8(len);
 
         if self.value < 0 {
             dst.put_u8(0);
@@ -170,7 +182,7 @@ impl Encode<BytesMut> for Numeric {
 
         let value = self.value().abs();
 
-        match self.len() {
+        match len {
             5 => dst.put_u32_le(value as u32),
             9 => dst.put_u64_le(value as u64),
             13 => {
@@ -532,6 +544,51 @@ mod tests {
             .expect("decode must succeed");
 
         assert!(decoded.is_none());
+    }
+
+    #[tokio::test]
+    async fn decode_rejects_len17_magnitude_over_i128_max() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        // len = 17, sign = 1 (positive), magnitude = 2^127 (byte[15] = 0x80),
+        // which exceeds i128::MAX. Must return a protocol error rather than
+        // wrapping to a negative value (or panicking on i128::MIN * -1).
+        let mut buf = BytesMut::new();
+        buf.put_u8(17);
+        buf.put_u8(1);
+        let mut mag = [0u8; 16];
+        mag[15] = 0x80;
+        buf.extend_from_slice(&mag);
+
+        let err = Numeric::decode(&mut buf.into_sql_read_bytes(), 0)
+            .await
+            .expect_err("out-of-range magnitude must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn decode_rejects_invalid_sign_and_length() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        // Invalid sign byte (2 is neither 0 nor 1).
+        let mut buf = BytesMut::new();
+        buf.put_u8(5);
+        buf.put_u8(2);
+        buf.put_u32_le(1);
+        let err = Numeric::decode(&mut buf.into_sql_read_bytes(), 0)
+            .await
+            .expect_err("invalid sign must error");
+        assert!(matches!(err, Error::Protocol(_)));
+
+        // Invalid length byte (6 is not one of 0/5/9/13/17).
+        let mut buf = BytesMut::new();
+        buf.put_u8(6);
+        buf.put_u8(1);
+        buf.extend_from_slice(&[0u8; 4]);
+        let err = Numeric::decode(&mut buf.into_sql_read_bytes(), 0)
+            .await
+            .expect_err("invalid length must error");
+        assert!(matches!(err, Error::Protocol(_)));
     }
 
     #[test]

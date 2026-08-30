@@ -175,7 +175,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
             }
             TrustConfig::Default => {
                 event!(Level::DEBUG, "Using default trust configuration.");
-                builder.with_native_roots()
+                builder.with_native_roots()?
             }
         };
 
@@ -340,17 +340,26 @@ fn load_client_auth(
 }
 
 trait ConfigBuilderExt {
-    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsClientCert>;
+    fn with_native_roots(self) -> crate::Result<ConfigBuilder<ClientConfig, WantsClientCert>>;
 }
 
 impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
-    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsClientCert> {
+    fn with_native_roots(self) -> crate::Result<ConfigBuilder<ClientConfig, WantsClientCert>> {
         let mut roots = RootCertStore::empty();
         let mut valid_count = 0;
         let mut invalid_count = 0;
 
-        for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs")
-        {
+        // Loading the OS trust store can fail (stripped container, unreadable
+        // store) and can legitimately come back empty. Neither is a reason to
+        // abort the whole process: surface a catchable error instead of the
+        // previous `.expect()` / `assert!` panics.
+        let native_certs =
+            rustls_native_certs::load_native_certs().map_err(|err| crate::Error::Io {
+                kind: IoErrorKind::NotFound,
+                message: format!("could not load platform certificates: {err}"),
+            })?;
+
+        for cert in native_certs {
             match roots.add(cert) {
                 Ok(_) => valid_count += 1,
                 Err(err) => {
@@ -365,8 +374,14 @@ impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
             valid_count,
             invalid_count
         );
-        assert!(!roots.is_empty(), "no CA certificates found");
 
-        self.with_root_certificates(roots)
+        if roots.is_empty() {
+            return Err(crate::Error::Io {
+                kind: IoErrorKind::NotFound,
+                message: "no usable CA certificates found in the platform trust store".to_string(),
+            });
+        }
+
+        Ok(self.with_root_certificates(roots))
     }
 }

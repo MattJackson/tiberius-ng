@@ -379,10 +379,11 @@ impl<'a> LoginMessage<'a> {
                 fea_ext_offset = cursor.position();
             }
 
-            // write the client ID (created from the MAC address)
+            // Client ID field: a fixed placeholder (not derived from the
+            // MAC address). SQL Server does not require a real value here.
             if i == 9 {
-                cursor.write_u32::<LittleEndian>(0)?; //TODO:
-                cursor.write_u16::<LittleEndian>(42)?; //TODO: generate real client id
+                cursor.write_u32::<LittleEndian>(0)?;
+                cursor.write_u16::<LittleEndian>(42)?;
                 continue;
             }
 
