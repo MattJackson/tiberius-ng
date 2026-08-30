@@ -45,6 +45,12 @@ trap finish EXIT
 # System build deps for the 'all' feature set (TLS backends + Kerberos/GSSAPI).
 dnf install -y git gcc gcc-c++ make cmake openssl-devel pkgconf perl krb5-devel clang clang-libs awscli
 export LIBCLANG_PATH=/usr/lib64
+# AL2023 mounts /tmp as tmpfs (RAM-backed, ~half of RAM). cargo-mutants builds
+# each mutant under \$TMPDIR, and a full '--features all' build overflows the
+# RAM disk (No space left on device) — which cargo-mutants then miscounts as
+# "unviable". Point TMPDIR at the (100GB) root EBS volume instead.
+mkdir -p /root/mutants-tmp
+export TMPDIR=/root/mutants-tmp
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 export CARGO_HOME=/root/.cargo RUSTUP_HOME=/root/.rustup
 export PATH=/root/.cargo/bin:\$PATH

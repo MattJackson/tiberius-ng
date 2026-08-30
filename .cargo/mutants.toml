@@ -64,6 +64,28 @@ exclude_re = [
     # Its false branch (ntext(max)) needs a >1 GiB string, which a unit test
     # cannot allocate, so `with true` can never be distinguished from the guard.
     "s.len\\(\\) <= MAX_NVARCHAR_SIZE with true",
+    # Equivalent mutants: the decimal decoder applies the sign as `value * sign`
+    # where `sign` is exactly -1 or 1, so `value / sign` gives the identical
+    # result. (The `* with +` variant is NOT equivalent and is covered by tests.)
+    # Anchored to `Numeric::decode` so the real arithmetic in the nested
+    # `decode_d128` helper stays in scope.
+    "\\* with / in Numeric::decode$",
+    # Platform-specific / feature-gated code that cannot be exercised on the
+    # Linux offline gate (the other cfg branch compiles there, so mutants on the
+    # inactive branch always "survive"), plus code that requires a live server:
+    #
+    #   * get_computer_name        - Win32/POSIX FFI hostname lookup.
+    #   * ConfigString::authentication - windows/unix-sspi/gssapi arms diverge by
+    #     cfg; the connection-string auth parsing is covered by the ado_net/jdbc
+    #     integration tests.
+    #   * PreloginMessage::negotiated_encryption - TLS vs no-TLS cfg variants.
+    #   * LoginMessage::encode_to_vec - login-packet wire serialisation.
+    #   * Command::build_rpc_params - needs a live Client to resolve TVP metadata.
+    "get_computer_name",
+    "in ConfigString::authentication",
+    "PreloginMessage::negotiated_encryption",
+    "LoginMessage<'a>::encode_to_vec",
+    "Command<'a>::build_rpc_params",
 ]
 
 # A generous per-mutant timeout; a mutation that causes an infinite loop is a

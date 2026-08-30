@@ -389,6 +389,94 @@ mod tests {
     }
 
     #[test]
+    fn numeric_eq_normalizes_across_a_scale_gap() {
+        // 1.23 at scale 5 (123000) equals 1.23 at scale 2 (123). A scale gap of
+        // 3 is chosen so the `self.scale - other.scale` exponent (3) differs from
+        // both `+` (7) and `/` (1) — pinning the subtraction — and the
+        // `10^gap * v` multiply differs from `+`/`/`. Both comparison directions
+        // exercise the Greater and Less arms.
+        let wide = Numeric {
+            value: 123_000,
+            scale: 5,
+        };
+        let narrow = Numeric {
+            value: 123,
+            scale: 2,
+        };
+        assert_eq!(wide, narrow); // Greater arm (self.scale > other.scale)
+        assert_eq!(narrow, wide); // Less arm
+        assert!(
+            narrow
+                != Numeric {
+                    value: 124,
+                    scale: 2
+                }
+        );
+    }
+
+    #[test]
+    fn encode_byte_layout_matches_length_bucket() {
+        // The encoder writes 1 length byte + 1 sign byte + (len-1) magnitude
+        // bytes. This pins the per-length arms (deleting the 9- or 13-byte arm
+        // would change the byte count) and the sign byte for zero.
+        for value in [1i128, 10i128.pow(12), 10i128.pow(20), 10i128.pow(30)] {
+            let n = Numeric::new_with_scale(value, 0);
+            let expected = n.len() as usize + 1;
+            let mut buf = BytesMut::new();
+            n.encode(&mut buf).unwrap();
+            assert_eq!(buf.len(), expected, "byte count for {value}");
+        }
+
+        // Zero is encoded as positive (sign byte 1), not negative.
+        let mut zero = BytesMut::new();
+        Numeric::new_with_scale(0, 0).encode(&mut zero).unwrap();
+        assert_eq!(zero[1], 1, "zero must carry the positive sign byte");
+    }
+
+    #[tokio::test]
+    async fn decode_d128_keeps_high_and_low_words() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        // A magnitude whose high bytes are all non-zero: if decode_d128 wrongly
+        // short-circuited on "all high bytes non-zero" it would drop the high
+        // word and mis-decode. Positive (high byte 0x01 < i128::MAX high bit).
+        let value = 0x0101_0101_0101_0101_0101_0101_0101_0101i128;
+        let n = Numeric::new_with_scale(value, 0);
+        let mut buf = BytesMut::new();
+        n.encode(&mut buf).unwrap();
+        let decoded = Numeric::decode(&mut buf.into_sql_read_bytes(), 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(decoded.value(), value);
+    }
+
+    #[tokio::test]
+    async fn decode_accepts_magnitude_at_i128_max_but_rejects_beyond() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+        // 17-byte form: len, sign(1 = positive), then 16 magnitude bytes.
+        let mut at_max = BytesMut::new();
+        at_max.put_u8(17);
+        at_max.put_u8(1);
+        at_max.put_i128_le(i128::MAX); // magnitude exactly i128::MAX
+        let decoded = Numeric::decode(&mut at_max.into_sql_read_bytes(), 0)
+            .await
+            .expect("i128::MAX magnitude is representable")
+            .unwrap();
+        assert_eq!(decoded.value(), i128::MAX);
+
+        // One past i128::MAX (high bit set) must be rejected, not wrapped.
+        let mut beyond = BytesMut::new();
+        beyond.put_u8(17);
+        beyond.put_u8(1);
+        beyond.put_u128_le((i128::MAX as u128) + 1);
+        assert!(Numeric::decode(&mut beyond.into_sql_read_bytes(), 0)
+            .await
+            .is_err());
+    }
+
+    #[test]
     fn numeric_to_f64() {
         assert_eq!(f64::from(Numeric::new_with_scale(57705, 2)), 577.05);
     }
