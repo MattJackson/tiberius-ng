@@ -218,6 +218,9 @@ mod tests {
     }
 
     #[test]
+    // The `&Some(..)`/`&None` borrows are intentional: they exercise the
+    // `ToSql for &T` impls, not the by-value ones, so the borrow is not needless.
+    #[allow(clippy::needless_borrow)]
     fn to_sql_option_some_and_none() {
         assert_eq!(Some(1i32).to_sql(), ColumnData::I32(Some(1)));
         assert_eq!(None::<i32>.to_sql(), ColumnData::I32(None));
@@ -370,6 +373,9 @@ mod tests {
     }
 
     #[test]
+    // The `&value` borrows are intentional: they exercise the `ToSql for &T`
+    // impls for the base scalar types, so the borrow is not needless.
+    #[allow(clippy::needless_borrow)]
     fn to_sql_by_reference_scalars() {
         // The macro-generated impls also cover `&T` for the base scalar types.
         assert_eq!((&true).to_sql(), ColumnData::Bit(Some(true)));
