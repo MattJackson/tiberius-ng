@@ -51,6 +51,17 @@ jobs:
         # backends simultaneously, which does not compile by design.
         run: cargo llvm-cov --features all --lcov --output-path lcov.info
 
+      - name: Coverage summary
+        # Re-report from the profdata collected above so the total line/region
+        # coverage is visible directly in the CI log (independent of Codecov).
+        run: cargo llvm-cov report --summary-only
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lcov
+          path: lcov.info
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
