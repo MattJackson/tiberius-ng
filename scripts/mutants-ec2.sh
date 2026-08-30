@@ -86,7 +86,7 @@ run)
       --instance-market-options '{"MarketType":"spot"}' \
       --iam-instance-profile "Name=$PROFILE" \
       --instance-initiated-shutdown-behavior terminate \
-      --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":30}}]' \
+      --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":100}}]' \
       --user-data "$(user_data "$shard")" \
       --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$TAG-$shard}]" \
       --query 'Instances[0].InstanceId' --output text)
