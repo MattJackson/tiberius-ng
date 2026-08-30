@@ -142,4 +142,45 @@ mod tests {
             "'deadlocked' on server myserver executing myproc on line 42 (code: 1205, state: 2, class: 13)"
         );
     }
+
+    #[tokio::test]
+    async fn decode_reads_all_fields_with_four_byte_line_number() {
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use byteorder::{LittleEndian, WriteBytesExt};
+        use bytes::{BufMut, BytesMut};
+
+        fn write_us_varchar(buf: &mut Vec<u8>, s: &str) {
+            buf.write_u16::<LittleEndian>(s.encode_utf16().count() as u16)
+                .unwrap();
+            for u in s.encode_utf16() {
+                buf.write_u16::<LittleEndian>(u).unwrap();
+            }
+        }
+
+        fn write_b_varchar(buf: &mut Vec<u8>, s: &str) {
+            buf.push(s.encode_utf16().count() as u8);
+            for u in s.encode_utf16() {
+                buf.write_u16::<LittleEndian>(u).unwrap();
+            }
+        }
+
+        let mut body = Vec::new();
+        body.write_u32::<LittleEndian>(1205).unwrap(); // code
+        body.push(2); // state
+        body.push(13); // class
+        write_us_varchar(&mut body, "deadlocked");
+        write_b_varchar(&mut body, "myserver");
+        write_b_varchar(&mut body, "myproc");
+        body.write_u32::<LittleEndian>(42).unwrap(); // line, TDS >= 7.2 (default context)
+
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(body.len() as u16); // length prefix, ignored by decode
+        buf.put_slice(&body);
+
+        let decoded = TokenError::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+
+        assert_eq!(decoded, sample());
+    }
 }
