@@ -256,4 +256,100 @@ mod tests {
 
         assert_eq!(&buf[..], &[0x06, 0x01, 0x00, 0x08, 0x00, 0x00, 0x01, 0x00]);
     }
+
+    #[test]
+    fn new_sets_login_type_and_reset_connection_status() {
+        let header = PacketHeader::new(123, 5);
+
+        assert_eq!(header.r#type() as u8, PacketType::TDSv7Login as u8);
+        assert_eq!(header.status(), PacketStatus::ResetConnection);
+        assert_eq!(header.length(), 123);
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_on_length_overflow() {
+        PacketHeader::new(usize::from(u16::MAX) + 1, 0);
+    }
+
+    #[test]
+    fn rpc_header_type_and_status() {
+        let header = PacketHeader::rpc(7);
+        assert_eq!(header.r#type() as u8, PacketType::Rpc as u8);
+        assert_eq!(header.status(), PacketStatus::NormalMessage);
+    }
+
+    #[test]
+    fn pre_login_header_type_and_status() {
+        let header = PacketHeader::pre_login(7);
+        assert_eq!(header.r#type() as u8, PacketType::PreLogin as u8);
+        assert_eq!(header.status(), PacketStatus::EndOfMessage);
+    }
+
+    #[test]
+    fn login_header_type_and_status() {
+        let header = PacketHeader::login(7);
+        assert_eq!(header.r#type() as u8, PacketType::TDSv7Login as u8);
+        assert_eq!(header.status(), PacketStatus::EndOfMessage);
+    }
+
+    #[test]
+    fn batch_header_type_and_status() {
+        let header = PacketHeader::batch(7);
+        assert_eq!(header.r#type() as u8, PacketType::SQLBatch as u8);
+        assert_eq!(header.status(), PacketStatus::NormalMessage);
+    }
+
+    #[test]
+    fn bulk_load_header_type_and_status() {
+        let header = PacketHeader::bulk_load(7);
+        assert_eq!(header.r#type() as u8, PacketType::BulkLoad as u8);
+        assert_eq!(header.status(), PacketStatus::NormalMessage);
+    }
+
+    #[test]
+    fn transaction_manager_header_type_and_status() {
+        let header = PacketHeader::transaction_manager(7);
+        assert_eq!(
+            header.r#type() as u8,
+            PacketType::TransactionManagerReq as u8
+        );
+        assert_eq!(header.status(), PacketStatus::EndOfMessage);
+    }
+
+    #[test]
+    fn set_status_mutates_header() {
+        let mut header = PacketHeader::batch(1);
+        assert_eq!(header.status(), PacketStatus::NormalMessage);
+
+        header.set_status(PacketStatus::IgnoreEvent);
+        assert_eq!(header.status(), PacketStatus::IgnoreEvent);
+    }
+
+    #[test]
+    fn decode_round_trips_header_fields() {
+        let header = PacketHeader::rpc(9);
+
+        let mut buf = BytesMut::new();
+        header.encode(&mut buf).unwrap();
+
+        let decoded = PacketHeader::decode(&mut buf).unwrap();
+        assert_eq!(decoded.r#type() as u8, PacketType::Rpc as u8);
+        assert_eq!(decoded.status(), PacketStatus::NormalMessage);
+        assert_eq!(decoded.length(), 0);
+    }
+
+    #[test]
+    fn decode_invalid_packet_type_errors() {
+        let mut buf = BytesMut::from(&[0xffu8, 0x01, 0x00, 0x08, 0x00, 0x00, 0x01, 0x00][..]);
+        let err = PacketHeader::decode(&mut buf).unwrap_err();
+        assert!(format!("{}", err).contains("invalid packet type"));
+    }
+
+    #[test]
+    fn decode_invalid_packet_status_errors() {
+        let mut buf = BytesMut::from(&[0x01u8, 0xff, 0x00, 0x08, 0x00, 0x00, 0x01, 0x00][..]);
+        let err = PacketHeader::decode(&mut buf).unwrap_err();
+        assert!(format!("{}", err).contains("invalid packet status"));
+    }
 }
