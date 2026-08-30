@@ -609,4 +609,204 @@ mod tests {
         };
         assert_eq!(guid.null_value(), ColumnData::Guid(None));
     }
+
+    #[test]
+    fn null_value_maps_precision_and_xml_and_udt() {
+        let precision = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSizedPrecision {
+                ty: VarLenType::Numericn,
+                size: 17,
+                precision: 18,
+                scale: 2,
+            },
+        };
+        assert_eq!(precision.null_value(), ColumnData::Numeric(None));
+
+        let xml = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::Xml {
+                schema: None,
+                size: 0,
+            },
+        };
+        assert_eq!(xml.null_value(), ColumnData::Xml(None));
+
+        let udt = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::Udt(crate::tds::codec::type_info::UdtInfo {
+                max_byte_size: 0,
+                db_name: "db".into(),
+                schema_name: "dbo".into(),
+                type_name: "T".into(),
+                assembly_qualified_name: "A".into(),
+            }),
+        };
+        assert_eq!(udt.null_value(), ColumnData::Binary(None));
+    }
+
+    #[test]
+    fn base_meta_data_column_flag_accessors() {
+        let base = BaseMetaDataColumn {
+            flags: ColumnFlag::Nullable | ColumnFlag::Identity | ColumnFlag::Updateable,
+            ty: TypeInfo::FixedLen(FixedLenType::Int4),
+        };
+
+        assert!(base.is_nullable());
+        assert!(base.is_identity());
+        assert!(base.is_updateable());
+        assert_eq!(base.ty(), &TypeInfo::FixedLen(FixedLenType::Int4));
+        assert_eq!(base.flags(), base.flags);
+
+        let base2 = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::FixedLen(FixedLenType::Int4),
+        };
+        assert!(!base2.is_nullable());
+        assert!(!base2.is_identity());
+        assert!(!base2.is_updateable());
+    }
+
+    #[test]
+    fn meta_data_column_accessors() {
+        let m = meta(TypeInfo::FixedLen(FixedLenType::Int4), "id");
+        assert_eq!(m.col_name(), "id");
+        assert!(m.base().is_nullable());
+    }
+
+    #[test]
+    fn display_formats_more_types() {
+        let cases = vec![
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Bitn, 1, None)),
+                "c bit",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
+                "c datetime",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Money, 4, None)),
+                "c smallmoney",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Money, 8, None)),
+                "c money",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigVarChar, 100, None)),
+                "c varchar(100)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigVarChar, 100000, None)),
+                "c varchar(max)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 10, None)),
+                "c binary(10)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigChar, 10, None)),
+                "c char(10)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::NVarchar, 100, None)),
+                "c nvarchar(100)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::NVarchar, 100000, None)),
+                "c nvarchar(max)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::NChar, 10, None)),
+                "c nchar(10)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Text, 0, None)),
+                "c text",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Image, 0, None)),
+                "c image",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::NText, 0, None)),
+                "c ntext",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+                "c smallint",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+                "c bigint",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+                "c float",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::SSVariant, 0, None)),
+                "c sql_variant",
+            ),
+        ];
+
+        for (ty, expected) in cases {
+            let expected = expected.replacen("c ", "[c] ", 1);
+            assert_eq!(format!("{}", meta(ty, "c")), expected);
+        }
+    }
+
+    #[test]
+    fn display_formats_udt_and_decimaln() {
+        let udt = TypeInfo::Udt(crate::tds::codec::type_info::UdtInfo {
+            max_byte_size: 0,
+            db_name: "db".into(),
+            schema_name: "dbo".into(),
+            type_name: "MyType".into(),
+            assembly_qualified_name: "asm".into(),
+        });
+        assert_eq!(format!("{}", meta(udt, "c")), "[c] dbo.MyType");
+
+        let decimaln = TypeInfo::VarLenSizedPrecision {
+            ty: VarLenType::Decimaln,
+            size: 17,
+            precision: 10,
+            scale: 4,
+        };
+        assert_eq!(format!("{}", meta(decimaln, "c")), "[c] decimal(10,4)");
+    }
+
+    #[tokio::test]
+    async fn decode_all_ones_column_count_yields_empty() {
+        // column_count == 0xffff is treated as "no columns" (guards against a
+        // sentinel/placeholder value rather than a real column list).
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(0xffff);
+
+        let decoded = TokenColMetaData::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .unwrap();
+        assert!(decoded.columns.is_empty());
+    }
+
+    #[test]
+    fn column_flag_bits_are_distinct() {
+        let all = ColumnFlag::Nullable
+            | ColumnFlag::CaseSensitive
+            | ColumnFlag::Updateable
+            | ColumnFlag::UpdateableUnknown
+            | ColumnFlag::Identity
+            | ColumnFlag::Computed
+            | ColumnFlag::FixedLenClrType
+            | ColumnFlag::SparseColumnSet
+            | ColumnFlag::Encrypted
+            | ColumnFlag::Hidden
+            | ColumnFlag::Key
+            | ColumnFlag::NullableUnknown;
+
+        assert!(all.contains(ColumnFlag::Nullable));
+        assert!(all.contains(ColumnFlag::NullableUnknown));
+        assert_eq!(BitFlags::bits(all).count_ones(), 12);
+    }
 }
