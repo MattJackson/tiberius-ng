@@ -13,24 +13,17 @@ version 0.12.3 reflect the history of the upstream project prior to the fork.
 
 ## [Unreleased]
 
-We are working through the backlog of open pull requests and issues from
-upstream. Additional fixes and features are being integrated and will appear
-here as they land.
+Nothing yet. **0.13.1 is a stable settling point** — the fork has cleared the
+security advisories, worked through the upstream backlog, and hardened the
+codebase (100% mutation score, ~93% line coverage against a live SQL Server in
+CI). No further releases are planned in the immediate term; the crate is
+considered stable for production use.
 
-### Added
-
-- (Backlog) Further community PRs and issue fixes are being triaged and
-  integrated; see the [issue tracker](https://github.com/MattJackson/tiberius-ng/issues).
-
-### Fixed
-
-- (Backlog) Outstanding bug reports carried over from upstream are being
-  reviewed and resolved.
-
-### Changed
-
-- (Backlog) Ongoing dependency maintenance to keep the crate free of security
-  advisories.
+Bug reports and feature requests are welcome via
+[GitHub Issues](https://github.com/MattJackson/tiberius-ng/issues); usage
+questions and general discussion via
+[Discussions](https://github.com/MattJackson/tiberius-ng/discussions). Fixes
+that land will be documented here.
 
 ## [0.13.1] - 2026-08-30
 
@@ -67,7 +60,15 @@ A follow-up "polish" patch on top of the 0.13.0 release.
   feature/`cfg`-divergent code that cannot be exercised by the offline unit
   suite are documented exclusions; the gate fails on any surviving mutant in the
   remaining logic. Several equivalent mutants were also removed by minor
-  simplifications (e.g. `1 << 0` → `1`).
+  simplifications (e.g. `1 << 0` → `1`). The sweep reaches a **100% mutation
+  score** (0 survivors) over the covered logic.
+- **Coverage.** CI now measures line coverage with
+  [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) against a live
+  SQL Server 2022 container and publishes to Codecov (~93% lines). Added offline
+  codec unit tests and a `transactions` integration suite (commit/rollback,
+  explicit isolation levels) that piggybacks the existing CI SQL Server.
+- **Lint hygiene.** `cargo clippy --features all --all-targets` is clean under
+  `-D warnings`, including the test and example targets.
 
 ## [0.13.0] - 2026-08-29
 

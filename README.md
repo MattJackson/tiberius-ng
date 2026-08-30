@@ -145,9 +145,13 @@ Tiberius takes any `AsyncRead + AsyncWrite` socket, so it runs under:
 - **Tokio** — wrap the stream with `tokio_util::compat`.
 - **smol** — pass the `TcpStream` directly.
 
-Connection pooling is intentionally out of scope — use
-[`bb8`](https://crates.io/crates/bb8), [`deadpool`](https://crates.io/crates/deadpool)
-or [`mobc`](https://crates.io/crates/mobc).
+Connection pooling is delegated to the async pool crates — this keeps Tiberius
+runtime-agnostic and lets the connection lifecycle evolve independently of the
+driver. Use [`bb8`](https://crates.io/crates/bb8),
+[`deadpool`](https://crates.io/crates/deadpool) or
+[`mobc`](https://crates.io/crates/mobc); see the
+[pooling guide](docs/GUIDE.md#connection-pooling) for a ready-to-copy `bb8`
+manager.
 
 ## Encryption & authentication
 

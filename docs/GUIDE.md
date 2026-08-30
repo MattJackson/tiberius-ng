@@ -227,9 +227,79 @@ client.cancel_query().await?; // sends a TDS Attention signal
 
 ## Connection pooling
 
-Pooling is intentionally out of scope. Use [`bb8`](https://crates.io/crates/bb8),
+Pooling is delegated to the async pool crates rather than built in. This keeps
+Tiberius runtime-agnostic (a pool has to pick a runtime's timers and tasks) and
+lets the connection lifecycle — sizing, health checks, idle reaping — evolve
+independently of the driver. Use [`bb8`](https://crates.io/crates/bb8),
 [`deadpool`](https://crates.io/crates/deadpool), or
-[`mobc`](https://crates.io/crates/mobc) with a tiberius connection manager.
+[`mobc`](https://crates.io/crates/mobc) with a small connection manager.
+
+Because Tiberius has no MARS (one in-flight request per connection), a pool is
+also the natural way to get concurrency: check out a connection per task.
+
+Here is a minimal [`bb8`](https://crates.io/crates/bb8) manager over Tokio:
+
+```rust,ignore
+use bb8::{ManageConnection, Pool};
+use tiberius::{Client, Config};
+use tokio::net::TcpStream;
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
+
+struct TiberiusManager {
+    config: Config,
+}
+
+#[async_trait::async_trait]
+impl ManageConnection for TiberiusManager {
+    type Connection = Client<Compat<TcpStream>>;
+    type Error = tiberius::error::Error;
+
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        let tcp = TcpStream::connect(self.config.get_addr()).await?;
+        tcp.set_nodelay(true)?;
+        Client::connect(self.config.clone(), tcp.compat_write()).await
+    }
+
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        // Cheap round-trip to confirm the connection is still alive.
+        conn.simple_query("SELECT 1").await?.into_row().await?;
+        Ok(())
+    }
+
+    fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
+        false
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let mut config = Config::new();
+    config.host("localhost");
+    config.port(1433);
+    config.authentication(tiberius::AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
+    config.trust_cert(); // don't do this in production
+
+    let pool = Pool::builder()
+        .max_size(16)
+        .build(TiberiusManager { config })
+        .await?;
+
+    // Check out a connection; it returns to the pool on drop.
+    let mut conn = pool.get().await?;
+    let row = conn
+        .query("SELECT @P1 AS n", &[&1i32])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some(1i32), row.get("n"));
+    Ok(())
+}
+```
+
+The [`deadpool`](https://crates.io/crates/deadpool) and
+[`mobc`](https://crates.io/crates/mobc) integrations follow the same shape —
+implement their manager trait with the `connect`/`is_valid` logic above.
 
 ## Error handling
 
