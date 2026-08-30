@@ -366,7 +366,13 @@ impl TokenColMetaData<'static> {
         R: SqlReadBytes + Unpin,
     {
         let column_count = src.read_u16_le().await?;
-        let mut columns = Vec::with_capacity(column_count as usize);
+        // `column_count` is an untrusted u16 (up to 65535); cap the up-front
+        // reservation so a hostile COLMETADATA token can't force a large
+        // transient allocation before the column bodies arrive. The Vec still
+        // grows as real columns are decoded.
+        let mut columns = Vec::with_capacity(
+            (column_count as usize).min(crate::tds::codec::column_data::MAX_PREALLOC),
+        );
 
         if column_count > 0 && column_count < 0xffff {
             for _ in 0..column_count {
