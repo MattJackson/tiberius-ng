@@ -23,7 +23,6 @@ use std::convert::TryFrom;
 
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
-use futures_util::io::AsyncReadExt;
 
 use crate::{
     error::Error,
@@ -33,12 +32,18 @@ use crate::{
 };
 
 /// Reads exactly `len` raw bytes from the stream.
+///
+/// Uses the packet-aware `read_u8` (a `sql_variant` value can span TDS packet
+/// boundaries; `AsyncReadExt::read_exact` would treat a boundary as EOF). `len`
+/// is bounded by the caller to `MAX_VARIANT_PAYLOAD`.
 async fn read_bytes<R>(src: &mut R, len: usize) -> crate::Result<Vec<u8>>
 where
     R: SqlReadBytes + Unpin,
 {
-    let mut buf = vec![0u8; len];
-    src.read_exact(&mut buf).await?;
+    let mut buf = Vec::with_capacity(len);
+    for _ in 0..len {
+        buf.push(src.read_u8().await?);
+    }
     Ok(buf)
 }
 
@@ -108,8 +113,10 @@ where
 
     let res = match var {
         VarLenType::Guid => {
-            let mut data = [0u8; 16];
-            src.read_exact(&mut data).await?;
+            let bytes = read_bytes(src, 16).await?;
+            let mut data: [u8; 16] = bytes
+                .try_into()
+                .map_err(|_| Error::Protocol("sql_variant: short guid".into()))?;
             guid::reorder_bytes(&mut data);
             ColumnData::Guid(Some(uuid::Uuid::from_bytes(data)))
         }

@@ -1,7 +1,11 @@
 use crate::sql_read_bytes::SqlReadBytes;
-use futures_util::io::AsyncReadExt;
 
 // Decode a partially length-prefixed type.
+//
+// NOTE: values are read via the packet-aware `read_u8`/`read_u16_le`/`read_u32_le`
+// helpers (which transparently span TDS packet boundaries). The generic
+// `AsyncReadExt::read_exact` must NOT be used here: a PLP value can span multiple
+// packets, and `read_exact` treats a packet-boundary `Ok(0)` as EOF.
 pub(crate) async fn decode<R>(src: &mut R, len: usize) -> crate::Result<Option<Vec<u8>>>
 where
     R: SqlReadBytes + Unpin,
@@ -14,11 +18,12 @@ where
             match len {
                 // NULL
                 0xffff => Ok(None),
-                // `len` is a u16 here, so it is inherently bounded (< 64 KiB);
-                // read it in one shot instead of byte-by-byte.
                 _ => {
-                    let mut data = vec![0u8; len];
-                    src.read_exact(&mut data).await?;
+                    let mut data = Vec::with_capacity(len.min(super::MAX_PREALLOC));
+
+                    for _ in 0..len {
+                        data.push(src.read_u8().await?);
+                    }
 
                     Ok(Some(data))
                 }
@@ -39,23 +44,24 @@ where
                 _ => Vec::with_capacity((len as usize).min(super::MAX_PREALLOC)),
             };
 
+            let mut chunk_data_left = 0usize;
+
             loop {
-                let chunk_size = src.read_u32_le().await? as usize;
+                if chunk_data_left == 0 {
+                    // We have no chunk. Start a new one.
+                    let chunk_size = src.read_u32_le().await? as usize;
 
-                if chunk_size == 0 {
-                    break; // found a sentinel, we're done
-                }
+                    if chunk_size == 0 {
+                        break; // found a sentinel, we're done
+                    } else {
+                        chunk_data_left = chunk_size;
+                    }
+                } else {
+                    // Read a byte (packet-aware).
+                    let byte = src.read_u8().await?;
+                    chunk_data_left -= 1;
 
-                // Grow the output in bounded increments and read straight into
-                // it: one copy (socket -> data), no per-byte futures, and never
-                // a whole (untrusted) chunk length reserved up front.
-                let mut remaining = chunk_size;
-                while remaining > 0 {
-                    let take = remaining.min(super::MAX_PREALLOC);
-                    let start = data.len();
-                    data.resize(start + take, 0);
-                    src.read_exact(&mut data[start..]).await?;
-                    remaining -= take;
+                    data.push(byte);
                 }
             }
 
