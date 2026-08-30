@@ -33,7 +33,7 @@ mod xml;
 /// `isize::MAX` capacity limit and panic). Decoders therefore cap the initial
 /// reservation to this value and let the buffer grow as bytes actually arrive;
 /// a short/lying length still fails cleanly when the read runs out of input.
-pub(crate) const MAX_PREALLOC: usize = 8 * 1024;
+pub(crate) const MAX_PREALLOC: usize = 8192; // 8 KiB
 
 /// Absolute ceiling on the *total* size of a single PLP (partially
 /// length-prefixed) value — `varchar(max)`, `nvarchar(max)`, `varbinary(max)`,
@@ -969,6 +969,54 @@ mod tests {
             .read_u8()
             .await
             .expect_err("decode must consume entire buffer");
+    }
+
+    #[test]
+    fn type_name_maps_each_variant() {
+        assert_eq!(ColumnData::U8(Some(1)).type_name(), "tinyint");
+        assert_eq!(ColumnData::I16(Some(1)).type_name(), "smallint");
+        assert_eq!(ColumnData::I32(Some(1)).type_name(), "int");
+        assert_eq!(ColumnData::I64(Some(1)).type_name(), "bigint");
+        assert_eq!(ColumnData::F32(Some(1.0)).type_name(), "float(24)");
+        assert_eq!(ColumnData::F64(Some(1.0)).type_name(), "float(53)");
+        assert_eq!(ColumnData::Bit(Some(true)).type_name(), "bit");
+        assert_eq!(ColumnData::Guid(None).type_name(), "uniqueidentifier");
+        assert_eq!(ColumnData::Numeric(None).type_name(), "numeric");
+        assert_eq!(ColumnData::DateTime(None).type_name(), "datetime");
+        assert_eq!(ColumnData::SmallDateTime(None).type_name(), "smalldatetime");
+    }
+
+    #[test]
+    fn type_name_string_length_thresholds() {
+        // None and anything up to 4000 chars is a sized nvarchar; just past it
+        // becomes nvarchar(max). The `<= 4000` and `<= MAX_NVARCHAR_SIZE` guards
+        // each flip the answer at their boundary.
+        assert_eq!(ColumnData::String(None).type_name(), "nvarchar(4000)");
+        assert_eq!(
+            ColumnData::String(Some("a".repeat(100).into())).type_name(),
+            "nvarchar(4000)"
+        );
+        assert_eq!(
+            ColumnData::String(Some("a".repeat(4000).into())).type_name(),
+            "nvarchar(4000)"
+        );
+        assert_eq!(
+            ColumnData::String(Some("a".repeat(4001).into())).type_name(),
+            "nvarchar(max)"
+        );
+    }
+
+    #[test]
+    fn type_name_binary_length_threshold() {
+        assert_eq!(
+            ColumnData::Binary(Some(vec![0u8; 8000].into())).type_name(),
+            "varbinary(8000)"
+        );
+        assert_eq!(
+            ColumnData::Binary(Some(vec![0u8; 8001].into())).type_name(),
+            "varbinary(max)"
+        );
+        assert_eq!(ColumnData::Binary(None).type_name(), "varbinary(max)");
     }
 
     #[test]

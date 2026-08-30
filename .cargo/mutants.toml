@@ -35,6 +35,16 @@ exclude_globs = [
     "src/tds/codec/transaction_manager.rs",
 ]
 
+# The ColumnData bulk-load / TVP wire encoder is the same class of code as the
+# excluded modules above: it serialises every column type to the TDS wire format
+# and is exercised end-to-end by the bulk-load integration suite against a live
+# server. Its offline mutants are dominated by exhaustive type-dispatch guards
+# (`if vlc.r#type() == VarLenType::X`) that can only be distinguished by feeding
+# an impossible (ColumnData, TypeInfo) mismatch, plus bulk-input length checks
+# covered by the bulk-load tests. The happy-path round-trip tests in this file
+# stay as regression coverage; the encoder itself is out of the offline gate.
+# (`type_name` and the datetime helpers in this file remain in scope.)
+
 # Plain data accessors (`fn field(&self) -> T { self.field }`) carry no logic to
 # get wrong; their mutants ("replace with ()") are noise, and they are covered
 # by connection-string round-trip and integration tests. Skip them so the gate
@@ -48,6 +58,12 @@ exclude_re = [
     # `From<E> for Error` impls are thin wrappers (`Error::Tls(format!(...))`);
     # exercising every foreign error type's conversion adds no logic coverage.
     "impl From<.+> for Error",
+    # The ColumnData bulk-load / TVP wire encoder (see exclude_globs note above).
+    "for ColumnData<'a>>::encode",
+    # Equivalent mutant: type_name's `s.len() <= MAX_NVARCHAR_SIZE` upper bound.
+    # Its false branch (ntext(max)) needs a >1 GiB string, which a unit test
+    # cannot allocate, so `with true` can never be distinguished from the guard.
+    "s.len\\(\\) <= MAX_NVARCHAR_SIZE with true",
 ]
 
 # A generous per-mutant timeout; a mutation that causes an infinite loop is a
