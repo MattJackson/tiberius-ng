@@ -54,7 +54,8 @@ jobs:
           cargo mutants --features all \
             --shard ${{ matrix.shard }}/8 \
             -j "$(nproc)" \
-            --output "mutants-shard-${{ matrix.shard }}"
+            --output "mutants-shard-${{ matrix.shard }}" \
+            -- --lib
       - name: Upload shard results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

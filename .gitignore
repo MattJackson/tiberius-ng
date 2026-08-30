@@ -8,3 +8,4 @@ Cargo.lock
 mutants-ec2-results/
 .mutants-ec2-bucket
 mutants.out/
+mutants.out.old/
