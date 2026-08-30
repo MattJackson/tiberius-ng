@@ -53,7 +53,7 @@ cd /root
 git clone --depth 1 --branch "\${REF_BRANCH:-dev}" "$REPO_URL" repo || git clone "$REPO_URL" repo
 cd repo
 git checkout "$REF"
-cargo mutants --features all --shard "$shard/$N" --in-place -j "\$(nproc)" --output out || true
+cargo mutants --features all --shard "$shard/$N" -j "\$(nproc)" --output out || true
 aws s3 cp --recursive out/mutants.out "\$S3/" || true
 EOF
 }

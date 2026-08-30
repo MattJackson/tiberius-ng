@@ -3,3 +3,8 @@ Cargo.lock
 .idea
 .direnv/
 .vscode
+
+# cargo-mutants EC2 driver artifacts
+mutants-ec2-results/
+.mutants-ec2-bucket
+mutants.out/
