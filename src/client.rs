@@ -61,6 +61,19 @@ use std::{borrow::Cow, fmt::Debug};
 /// # }
 /// ```
 ///
+/// # Cancellation safety
+///
+/// A single [`Client`] drives one connection and one request at a time. If a
+/// `query`/`execute`/`simple_query` future — or the result stream it returns —
+/// is dropped before the request has been sent in full and the response fully
+/// consumed (for example under a `tokio::time::timeout` or a `select!` branch
+/// that loses the race), the connection may be left mid-message and out of sync
+/// with the server. A cancelled *write* is detected and any further use of that
+/// connection fails cleanly; a result stream dropped mid-response cannot be
+/// recovered. In both cases the safe course is to drop the `Client` and open a
+/// new connection (a connection pool should discard the connection on error)
+/// rather than reuse it.
+///
 /// [`Config`]: struct.Config.html
 #[derive(Debug)]
 pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
