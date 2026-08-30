@@ -13,7 +13,7 @@
   <br>
   <a href="https://github.com/MattJackson/tiberius-ng/actions/workflows/test.yml"><img src="https://github.com/MattJackson/tiberius-ng/actions/workflows/test.yml/badge.svg?branch=dev" alt="tests"></a>
   <a href="https://github.com/MattJackson/tiberius-ng/actions/workflows/security.yml"><img src="https://github.com/MattJackson/tiberius-ng/actions/workflows/security.yml/badge.svg?branch=dev" alt="security audit"></a>
-  <a href="https://codecov.io/gh/MattJackson/tiberius"><img src="https://codecov.io/gh/MattJackson/tiberius/branch/dev/graph/badge.svg" alt="coverage"></a>
+  <a href="https://codecov.io/gh/MattJackson/tiberius-ng"><img src="https://codecov.io/gh/MattJackson/tiberius-ng/branch/dev/graph/badge.svg" alt="coverage"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome"></a>
 </p>
 
