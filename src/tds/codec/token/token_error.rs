@@ -32,7 +32,11 @@ impl TokenError {
         let server = src.read_b_varchar().await?;
         let procedure = src.read_b_varchar().await?;
 
-        let line = if src.context().version() > FeatureLevel::SqlServer2005 {
+        // MS-TDS 2.2.7.10: LineNumber is a 4-byte LONG for TDS 7.2 (SQL Server
+        // 2005) and later, and a 2-byte USHORT before that. The boundary is
+        // inclusive of 7.2, so use `>=` — a strict `>` mis-reads a 2-byte value
+        // against a real SQL Server 2005 and desyncs the token stream.
+        let line = if src.context().version() >= FeatureLevel::SqlServer2005 {
             src.read_u32_le().await?
         } else {
             src.read_u16_le().await? as u32

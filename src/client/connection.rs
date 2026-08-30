@@ -63,6 +63,13 @@ where
     flushed: bool,
     context: Context,
     buf: BytesMut,
+    /// Set for the duration of a multi-packet write. A message is only partly
+    /// on the wire while this is `true`; if the writing future is dropped
+    /// (a cancelled `query`/`execute`, a `select!` losing the race, a
+    /// `tokio::time::timeout` firing) the flag stays set, so the next write on
+    /// the same connection fails cleanly instead of appending a second message
+    /// after a half-sent one and silently desyncing the server.
+    poisoned: bool,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
@@ -123,6 +130,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context,
             flushed: false,
             buf: BytesMut::new(),
+            poisoned: false,
         };
 
         let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
@@ -209,11 +217,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     where
         E: Sized + Encode<BytesMut>,
     {
+        self.ensure_not_poisoned()?;
         self.flushed = false;
         let packet_size = (self.context.packet_size() as usize) - HEADER_BYTES;
 
         let mut payload = BytesMut::new();
         item.encode(&mut payload)?;
+
+        // Mark the connection poisoned across the multi-packet write; a clean
+        // completion clears it below. A future dropped mid-loop leaves it set.
+        self.poisoned = true;
 
         while !payload.is_empty() {
             let writable = cmp::min(payload.len(), packet_size);
@@ -235,7 +248,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         }
 
         self.flush_sink().await?;
+        self.poisoned = false;
 
+        Ok(())
+    }
+
+    /// Returns an error if a previous multi-packet write on this connection was
+    /// interrupted (e.g. the query/execute future was cancelled), which would
+    /// have left a partial message on the wire. The connection cannot be safely
+    /// reused in that state and should be dropped.
+    fn ensure_not_poisoned(&self) -> crate::Result<()> {
+        if self.poisoned {
+            return Err(crate::Error::Protocol(
+                "connection was left in an inconsistent state by a cancelled write and can no longer be used; open a new connection"
+                    .into(),
+            ));
+        }
         Ok(())
     }
 
@@ -244,9 +272,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         mut header: PacketHeader,
         mut payload: Zeroizing<Vec<u8>>,
     ) -> crate::Result<()> {
+        self.ensure_not_poisoned()?;
         self.flushed = false;
         let packet_size = (self.context.packet_size() as usize) - HEADER_BYTES;
         let mut offset = 0;
+
+        self.poisoned = true;
 
         while offset < payload.len() {
             let end = cmp::min(payload.len(), offset + packet_size);
@@ -274,6 +305,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         }
 
         (&mut *self.transport).flush().await?;
+        self.poisoned = false;
 
         Ok(())
     }
@@ -696,6 +728,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     context,
                     flushed: false,
                     buf: BytesMut::new(),
+                    poisoned: false,
                 })
             }
         }

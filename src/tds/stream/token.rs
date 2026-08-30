@@ -241,6 +241,16 @@ where
 
         match change {
             TokenEnvChange::PacketSize(new_size, _) => {
+                // MS-TDS: a negotiated packet size must be within 512..=32767.
+                // Reject an out-of-range value from the server: the subsequent
+                // `packet_size - HEADER_BYTES` in the send paths would otherwise
+                // underflow (debug panic) or, for a value of exactly 8, produce
+                // a zero chunk size and spin `split_to(0)` forever.
+                if !(512..=32767).contains(&new_size) {
+                    return Err(crate::Error::Protocol(
+                        format!("server requested an invalid packet size of {new_size}").into(),
+                    ));
+                }
                 self.conn.context_mut().set_packet_size(new_size);
             }
             TokenEnvChange::BeginTransaction(desc) => {

@@ -1,4 +1,4 @@
-use crate::SqlReadBytes;
+use crate::{tds::codec::FeatureLevel, SqlReadBytes};
 
 #[allow(dead_code)] // we might want to debug the values
 #[derive(Debug)]
@@ -28,7 +28,15 @@ impl TokenInfo {
         let message = src.read_us_varchar().await?;
         let server = src.read_b_varchar().await?;
         let procedure = src.read_b_varchar().await?;
-        let line = src.read_u32_le().await?;
+        // MS-TDS 2.2.7.13: like ERROR, INFO's LineNumber is a 4-byte LONG for
+        // TDS 7.2 (SQL Server 2005) and later, and a 2-byte USHORT before that.
+        // Reading a fixed u32 over-reads 2 bytes against a TDS 7.1 server and
+        // desyncs the token stream.
+        let line = if src.context().version() >= FeatureLevel::SqlServer2005 {
+            src.read_u32_le().await?
+        } else {
+            src.read_u16_le().await? as u32
+        };
 
         Ok(TokenInfo {
             number,
