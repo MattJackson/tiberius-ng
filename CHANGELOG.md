@@ -59,6 +59,15 @@ long-standing bug reports, and substantially extends TDS protocol coverage
   From #411 by [@lstkz](https://github.com/lstkz).
 - Added a `cargo-deny` supply-chain gate (`deny.toml` + Security-audit workflow)
   and a Codecov coverage workflow; enforced in CI on every push/PR.
+- **Untrusted-input hardening (multi-round code audit).** Malformed or hostile
+  server responses can no longer panic, overflow, hang or exhaust memory in the
+  decoders: bounded the "unknown length" PLP accumulator and SESSIONSTATE /
+  ALTMETADATA / ORDER allocations; rejected out-of-range `decimal`/`numeric`
+  magnitudes, `datetime`/`datetimeoffset` values and negotiated packet sizes;
+  guarded the SQL-Browser (SSRP) reply parser; and made the `time`/`chrono`
+  conversions and the rustls native-root loader return errors instead of
+  panicking. A cancelled multi-packet write now poisons the connection so it
+  fails cleanly rather than desyncing the wire.
 
 ### Added — connectivity & protocol
 
@@ -100,6 +109,12 @@ long-standing bug reports, and substantially extends TDS protocol coverage
 - Return an `Error` instead of **panicking** on unexpected server input across
   the TDS decoder, and when the server declines the requested encryption level.
   Fixes #424, #425.
+- Corrected several protocol-conformance edges: the `date` TYPE_INFO no longer
+  emits a spurious scale byte (which desynced bulk-load/TVP metadata after a
+  `date` column); `ERROR`/`INFO` `LineNumber` is read with the correct
+  TDS-7.2-versioned width; a typeless `NULL` column decodes consistently across
+  the ROW and NBCROW paths; and a big-endian word-swap that corrupted large
+  decimals on BE hosts was removed.
 - Bounds-check column indexing so out-of-range `try_get` returns `Err`, not a
   panic (#211); match raw-identifier column names like `r#type` (#382).
 - Fix a multiply-overflow panic decoding dates before 1900 (#316).
