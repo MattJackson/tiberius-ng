@@ -333,6 +333,99 @@ bytes_reader!(ReadF32Le, f32, get_f32_le);
 bytes_reader!(ReadF64Le, f64, get_f64_le);
 
 #[cfg(test)]
+mod tests {
+    use super::test_utils::IntoSqlReadBytes;
+    use crate::SqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+
+    #[tokio::test]
+    async fn read_i8_value() {
+        let mut buf = BytesMut::new();
+        buf.put_i8(-5);
+        assert_eq!(buf.into_sql_read_bytes().read_i8().await.unwrap(), -5);
+    }
+
+    #[tokio::test]
+    async fn read_u32_big_endian() {
+        let mut buf = BytesMut::new();
+        buf.put_u32(0x01020304);
+        assert_eq!(
+            buf.into_sql_read_bytes().read_u32().await.unwrap(),
+            0x01020304
+        );
+    }
+
+    #[tokio::test]
+    async fn read_f32_and_f64_big_endian() {
+        let mut buf = BytesMut::new();
+        buf.put_f32(1.5);
+        assert_eq!(buf.into_sql_read_bytes().read_f32().await.unwrap(), 1.5);
+
+        let mut buf = BytesMut::new();
+        buf.put_f64(2.5);
+        assert_eq!(buf.into_sql_read_bytes().read_f64().await.unwrap(), 2.5);
+    }
+
+    #[tokio::test]
+    async fn read_f32_and_f64_little_endian() {
+        let mut buf = BytesMut::new();
+        buf.put_f32_le(1.5);
+        assert_eq!(buf.into_sql_read_bytes().read_f32_le().await.unwrap(), 1.5);
+
+        let mut buf = BytesMut::new();
+        buf.put_f64_le(2.5);
+        assert_eq!(buf.into_sql_read_bytes().read_f64_le().await.unwrap(), 2.5);
+    }
+
+    #[tokio::test]
+    async fn read_u128_and_i128_le() {
+        let mut buf = BytesMut::new();
+        buf.put_u128_le(12345);
+        assert_eq!(
+            buf.into_sql_read_bytes().read_u128_le().await.unwrap(),
+            12345
+        );
+
+        let mut buf = BytesMut::new();
+        buf.put_i128_le(-12345);
+        assert_eq!(
+            buf.into_sql_read_bytes().read_i128_le().await.unwrap(),
+            -12345
+        );
+    }
+
+    #[tokio::test]
+    async fn read_b_varchar_and_us_varchar() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(2);
+        buf.put_u16_le('h' as u16);
+        buf.put_u16_le('i' as u16);
+        assert_eq!(
+            buf.into_sql_read_bytes().read_b_varchar().await.unwrap(),
+            "hi"
+        );
+
+        let mut buf = BytesMut::new();
+        buf.put_u16_le(2);
+        buf.put_u16_le('h' as u16);
+        buf.put_u16_le('i' as u16);
+        assert_eq!(
+            buf.into_sql_read_bytes().read_us_varchar().await.unwrap(),
+            "hi"
+        );
+    }
+
+    #[tokio::test]
+    async fn context_and_context_mut_accessible() {
+        let buf = BytesMut::new();
+        let mut reader = buf.into_sql_read_bytes();
+        assert_eq!(reader.context().packet_size(), 4096);
+        reader.context_mut().set_packet_size(8192);
+        assert_eq!(reader.context().packet_size(), 8192);
+    }
+}
+
+#[cfg(test)]
 pub(crate) mod test_utils {
     use crate::tds::Context;
     use crate::SqlReadBytes;
