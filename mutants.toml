@@ -1,0 +1,42 @@
+# Configuration for `cargo mutants` (mutation testing).
+#
+# Mutation testing runs the unit-test suite (`--lib`) against thousands of
+# small code mutations; a mutation that no test catches ("missed") points at a
+# gap in the tests. The full run is sharded across EC2 runners — see
+# `.github/workflows/mutants.yml`.
+
+# Only the library unit tests can run without a live SQL Server, so restrict the
+# harness to them. Integration tests under `tests/` require a real server and
+# are covered separately by the `qa` UAT matrix.
+additional_cargo_test_args = ["--lib"]
+
+# Files excluded from mutation: their behaviour is driven by a live TCP/TLS
+# socket to SQL Server, so their mutants cannot be caught by offline unit tests
+# (they would all show up as false "missed"). They are exercised by the
+# integration suite instead.
+exclude_globs = [
+    "src/client.rs",
+    "src/client/connection.rs",
+    "src/client/tls.rs",
+    "src/client/tls_stream/**",
+    "src/tds/stream/**",
+    "src/sql_browser.rs",
+    "src/sql_browser/**",
+    "src/tds/codec/bulk_load.rs",
+    "src/tds/codec/rpc_request.rs",
+    "src/tds/codec/batch_request.rs",
+    "src/tds/codec/transaction_manager.rs",
+]
+
+# Plain data accessors (`fn field(&self) -> T { self.field }`) carry no logic to
+# get wrong; their mutants ("replace with ()") are noise, and they are covered
+# by connection-string round-trip and integration tests. Skip them so the gate
+# focuses on real logic.
+exclude_re = [
+    "replace [A-Za-z_:<>]+::(get_)?[a-z_]+ -> .* with (\\(\\)|Default::default\\(\\))",
+]
+
+# A generous per-mutant timeout; a mutation that causes an infinite loop is a
+# "timeout" (treated as caught).
+timeout_multiplier = 5.0
+minimum_test_timeout = 60

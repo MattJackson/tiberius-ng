@@ -1,0 +1,84 @@
+name: Mutation testing
+
+# Mutation testing is slow, so it does not run on every push. It runs:
+#   * on demand (`workflow_dispatch`), and
+#   * on a weekly schedule,
+# sharded across self-hosted EC2 runners (label `mutants`). Each shard runs a
+# slice of the mutants with `--shard i/N`; the `gate` job fails if any shard
+# reported a surviving ("missed") mutant.
+#
+# Provision the runners with `scripts/mutants-ec2.sh up` and tear them down with
+# `scripts/mutants-ec2.sh down`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "Number of shards (must match the runner count)"
+        default: "8"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutants-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutants:
+    name: mutants shard ${{ matrix.shard }}/8
+    runs-on: [self-hosted, linux, mutants]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --version ^27 --locked
+      - name: Run shard
+        run: |
+          cargo mutants --features all \
+            --shard ${{ matrix.shard }}/8 \
+            --in-place \
+            -j "$(nproc)" \
+            --output "mutants-shard-${{ matrix.shard }}"
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: mutants-shard-${{ matrix.shard }}/mutants.out/
+
+  gate:
+    name: gate on surviving mutants
+    needs: mutants
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: shards
+      - name: Fail if any mutant survived
+        shell: bash
+        run: |
+          survived=0
+          for f in shards/*/missed.txt; do
+            [ -f "$f" ] || continue
+            n=$(grep -cve '^[[:space:]]*$' "$f" || true)
+            if [ "$n" -gt 0 ]; then
+              echo "::error::$n surviving mutant(s) in $(dirname "$f")"
+              cat "$f"
+              survived=$((survived + n))
+            fi
+          done
+          echo "Total surviving mutants: $survived"
+          test "$survived" -eq 0
