@@ -514,4 +514,173 @@ mod tests {
 
         assert_eq!(Some(2i32), row.get::<i32, _>("r#type"));
     }
+
+    #[test]
+    fn row_accessors() {
+        let row = make_row();
+
+        assert_eq!(2, row.columns().len());
+        assert_eq!(2, row.len());
+        assert_eq!(0, row.result_index());
+
+        let cells: Vec<_> = row.cells().collect();
+        assert_eq!(2, cells.len());
+        assert_eq!("foo", cells[0].0.name());
+
+        let token_row = row.into_token_row();
+        assert_eq!(2, token_row.len());
+    }
+
+    #[test]
+    fn row_into_iterator_yields_column_data() {
+        let row = make_row();
+        let values: Vec<_> = row.into_iter().collect();
+        assert_eq!(
+            vec![ColumnData::I32(Some(1)), ColumnData::I32(Some(2))],
+            values
+        );
+    }
+
+    #[test]
+    fn get_column_data_missing_cell_errors() {
+        let columns = Arc::new(vec![
+            Column::new("a".to_string(), ColumnType::Int4),
+            Column::new("b".to_string(), ColumnType::Int4),
+        ]);
+
+        // Malformed row: metadata says 2 columns, but only 1 cell present.
+        let mut data = TokenRow::new();
+        data.push(ColumnData::I32(Some(1)));
+
+        let row = Row {
+            columns,
+            data,
+            result_index: 0,
+        };
+
+        let err = row.get_column_data(1usize).unwrap_err();
+        assert!(format!("{}", err).contains("row has no data for column index"));
+    }
+
+    #[test]
+    fn column_new_and_accessors() {
+        let column = Column::new("id".to_string(), ColumnType::Int8);
+        assert_eq!("id", column.name());
+        assert_eq!(ColumnType::Int8, column.column_type());
+    }
+
+    #[test]
+    fn column_type_from_fixed_len_type_info() {
+        use crate::tds::codec::FixedLenType;
+
+        let cases = [
+            (FixedLenType::Int1, ColumnType::Int1),
+            (FixedLenType::Bit, ColumnType::Bit),
+            (FixedLenType::Int2, ColumnType::Int2),
+            (FixedLenType::Int4, ColumnType::Int4),
+            (FixedLenType::Datetime4, ColumnType::Datetime4),
+            (FixedLenType::Float4, ColumnType::Float4),
+            (FixedLenType::Money, ColumnType::Money),
+            (FixedLenType::Datetime, ColumnType::Datetime),
+            (FixedLenType::Float8, ColumnType::Float8),
+            (FixedLenType::Money4, ColumnType::Money4),
+            (FixedLenType::Int8, ColumnType::Int8),
+            (FixedLenType::Null, ColumnType::Null),
+        ];
+
+        for (flt, expected) in cases {
+            let ti = TypeInfo::FixedLen(flt);
+            assert_eq!(ColumnType::from(&ti), expected);
+        }
+    }
+
+    #[test]
+    fn column_type_from_var_len_sized_type_info() {
+        use crate::tds::codec::VarLenType;
+        use crate::VarLenContext;
+
+        let cases = [
+            (VarLenType::Guid, 16, ColumnType::Guid),
+            (VarLenType::Intn, 1, ColumnType::Int1),
+            (VarLenType::Intn, 2, ColumnType::Int2),
+            (VarLenType::Intn, 4, ColumnType::Int4),
+            (VarLenType::Intn, 8, ColumnType::Int8),
+            (VarLenType::Intn, 3, ColumnType::Intn),
+            (VarLenType::Bitn, 1, ColumnType::Bitn),
+            (VarLenType::Decimaln, 17, ColumnType::Decimaln),
+            (VarLenType::Numericn, 17, ColumnType::Numericn),
+            (VarLenType::Floatn, 4, ColumnType::Float4),
+            (VarLenType::Floatn, 8, ColumnType::Float8),
+            (VarLenType::Floatn, 2, ColumnType::Floatn),
+            (VarLenType::Money, 8, ColumnType::Money),
+            (VarLenType::Datetimen, 8, ColumnType::Datetimen),
+            (VarLenType::BigVarBin, 8000, ColumnType::BigVarBin),
+            (VarLenType::BigVarChar, 8000, ColumnType::BigVarChar),
+            (VarLenType::BigBinary, 8000, ColumnType::BigBinary),
+            (VarLenType::BigChar, 8000, ColumnType::BigChar),
+            (VarLenType::NVarchar, 4000, ColumnType::NVarchar),
+            (VarLenType::NChar, 4000, ColumnType::NChar),
+            (VarLenType::Xml, 0, ColumnType::Xml),
+            (VarLenType::Udt, 0, ColumnType::Udt),
+            (VarLenType::Text, 0, ColumnType::Text),
+            (VarLenType::Image, 0, ColumnType::Image),
+            (VarLenType::NText, 0, ColumnType::NText),
+            (VarLenType::SSVariant, 0, ColumnType::SSVariant),
+        ];
+
+        for (ty, len, expected) in cases {
+            let ti = TypeInfo::VarLenSized(VarLenContext::new(ty, len, None));
+            assert_eq!(ColumnType::from(&ti), expected, "{:?} len {}", ty, len);
+        }
+    }
+
+    #[test]
+    fn column_type_from_var_len_sized_precision_type_info() {
+        use crate::tds::codec::VarLenType;
+
+        let cases = [
+            (VarLenType::Guid, ColumnType::Guid),
+            (VarLenType::Intn, ColumnType::Intn),
+            (VarLenType::Bitn, ColumnType::Bitn),
+            (VarLenType::Decimaln, ColumnType::Decimaln),
+            (VarLenType::Numericn, ColumnType::Numericn),
+            (VarLenType::Floatn, ColumnType::Floatn),
+            (VarLenType::Money, ColumnType::Money),
+            (VarLenType::Datetimen, ColumnType::Datetimen),
+            (VarLenType::BigVarBin, ColumnType::BigVarBin),
+            (VarLenType::BigVarChar, ColumnType::BigVarChar),
+            (VarLenType::BigBinary, ColumnType::BigBinary),
+            (VarLenType::BigChar, ColumnType::BigChar),
+            (VarLenType::NVarchar, ColumnType::NVarchar),
+            (VarLenType::NChar, ColumnType::NChar),
+            (VarLenType::Xml, ColumnType::Xml),
+            (VarLenType::Udt, ColumnType::Udt),
+            (VarLenType::Text, ColumnType::Text),
+            (VarLenType::Image, ColumnType::Image),
+            (VarLenType::NText, ColumnType::NText),
+            (VarLenType::SSVariant, ColumnType::SSVariant),
+        ];
+
+        for (ty, expected) in cases {
+            let ti = TypeInfo::VarLenSizedPrecision {
+                ty,
+                size: 38,
+                precision: 38,
+                scale: 2,
+            };
+            assert_eq!(ColumnType::from(&ti), expected, "{:?}", ty);
+        }
+    }
+
+    #[test]
+    fn column_type_from_xml_and_udt_type_info() {
+        use crate::tds::xml::XmlSchema;
+        use std::sync::Arc as StdArc;
+
+        let ti = TypeInfo::Xml {
+            schema: None::<StdArc<XmlSchema>>,
+            size: 0,
+        };
+        assert_eq!(ColumnType::from(&ti), ColumnType::Xml);
+    }
 }
