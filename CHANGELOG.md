@@ -59,6 +59,15 @@ A follow-up "polish" patch on top of the 0.13.0 release.
   tuple/unit structs, multiple lifetimes) with a proper `compile_error!` at the
   offending span instead of panicking, and documents the supported column field
   types.
+- **Mutation testing.** Added a sharded [cargo-mutants](https://mutants.rs)
+  harness (`.cargo/mutants.toml`, `.github/workflows/mutants.yml`, and
+  `scripts/mutants-ec2.sh` for on-demand EC2 fan-out) and closed the surviving
+  mutants it found across the codec, config, numeric, result and row layers with
+  new unit tests. Wire-serialization encoders, platform-specific FFI, and
+  feature/`cfg`-divergent code that cannot be exercised by the offline unit
+  suite are documented exclusions; the gate fails on any surviving mutant in the
+  remaining logic. Several equivalent mutants were also removed by minor
+  simplifications (e.g. `1 << 0` → `1`).
 
 ## [0.13.0] - 2026-08-29
 
