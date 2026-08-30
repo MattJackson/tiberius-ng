@@ -33,6 +33,17 @@ exclude_globs = [
     "src/tds/codec/rpc_request.rs",
     "src/tds/codec/batch_request.rs",
     "src/tds/codec/transaction_manager.rs",
+    # TLS module root (the submodule tree is already excluded above); driven by a
+    # live TLS handshake.
+    "src/client/tls_stream.rs",
+    # Buffer/stream adapter shims: thin `BufMut`/`Borrow`/`Deref`/`AsRef`
+    # wrappers around an underlying `BytesMut`. Their mutants are all
+    # slice-accessor noise (`Vec::leak`/`Box::leak`) with no logic to catch.
+    "src/tds/codec/column_data/bytes_mut_with_type_info.rs",
+    "src/tds/codec/token/token_row/bytes_mut_with_data_columns.rs",
+    # Thin SSPI token wrapper (Vec<u8>): an AsRef accessor plus wire encode,
+    # exercised by the integrated-auth handshake.
+    "src/tds/codec/token/token_sspi.rs",
 ]
 
 # The ColumnData bulk-load / TVP wire encoder is the same class of code as the
@@ -95,9 +106,11 @@ exclude_re = [
     # get_hostname is the platform hostname-lookup wrapper (see get_computer_name
     # above); its result depends on the host and cannot be pinned offline.
     "get_hostname -> Cow",
-    # A custom Debug impl that redacts a secret token: the whole-body mutant just
-    # empties the formatted output (cosmetic, and it still cannot leak the token).
-    "Debug for FedAuthExt",
+    # Custom Debug impls (several redact secrets): the whole-body replacement
+    # just empties the formatted output — cosmetic, and a redacting impl still
+    # cannot leak. Debug formatting is diagnostic, not logic.
+    "impl Debug for .+>::fmt -> std::fmt::Result with Ok\\(Default::default\\(\\)\\)",
+    "impl std::fmt::Debug for .+>::fmt -> std::fmt::Result with Ok\\(Default::default\\(\\)\\)",
 ]
 
 # A generous per-mutant timeout; a mutation that causes an infinite loop is a
