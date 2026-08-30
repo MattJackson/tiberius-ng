@@ -199,4 +199,153 @@ mod tests {
         assert_eq!(decoded.date(), expected_date);
         assert_eq!(decoded.time(), Time::from_hms(0, 0, 0).unwrap());
     }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn time_from_sql_and_back() {
+        use crate::FromSql;
+
+        // 12:34:56 as 100ns increments since midnight, scale 7.
+        let expected = Time::from_hms(12, 34, 56).unwrap();
+        let nanos: u64 = (expected - Time::from_hms(0, 0, 0).unwrap())
+            .whole_nanoseconds()
+            .try_into()
+            .unwrap();
+        let increments: u64 = nanos / 100;
+
+        let tds_time = super::super::Time::new(increments, 7);
+        let data = ColumnData::Time(Some(tds_time));
+
+        let decoded = Time::from_sql(&data).unwrap().unwrap();
+        assert_eq!(decoded, expected);
+
+        // Round trip back through ToSql.
+        use crate::ToSql;
+        let round_tripped = decoded.to_sql();
+        match round_tripped {
+            ColumnData::Time(Some(t)) => assert_eq!(t.increments, increments),
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn date_from_sql_and_back() {
+        use crate::{FromSql, ToSql};
+
+        let expected = Date::from_calendar_date(2020, Month::June, 15).unwrap();
+        let days = to_days(expected, 1) as u32;
+
+        let data = ColumnData::Date(Some(super::super::Date::new(days)));
+        let decoded = Date::from_sql(&data).unwrap().unwrap();
+        assert_eq!(decoded, expected);
+
+        match decoded.to_sql() {
+            ColumnData::Date(Some(d)) => assert_eq!(d.days(), days),
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn primitive_datetime_from_datetime2_and_back() {
+        use crate::{FromSql, ToSql};
+
+        let date = Date::from_calendar_date(2020, Month::June, 15).unwrap();
+        let time = Time::from_hms(1, 2, 3).unwrap();
+        let expected = PrimitiveDateTime::new(date, time);
+
+        let days = to_days(date, 1) as u32;
+        let nanos: u64 = (time - Time::from_hms(0, 0, 0).unwrap())
+            .whole_nanoseconds()
+            .try_into()
+            .unwrap();
+        let increments = nanos / 100;
+
+        let dt2 = super::super::DateTime2::new(
+            super::super::Date::new(days),
+            super::super::Time::new(increments, 7),
+        );
+        let data = ColumnData::DateTime2(Some(dt2));
+
+        let decoded = PrimitiveDateTime::from_sql(&data).unwrap().unwrap();
+        assert_eq!(decoded, expected);
+
+        match decoded.to_sql() {
+            ColumnData::DateTime2(Some(dt)) => {
+                assert_eq!(dt.date.days(), days);
+            }
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn primitive_datetime_from_smalldatetime_and_datetime() {
+        use crate::FromSql;
+
+        // SmallDateTime path.
+        let sdt = crate::tds::time::SmallDateTime::new(1, 30); // 30 minutes past midnight on day 1 (1900-01-02)
+        let data = ColumnData::SmallDateTime(Some(sdt));
+        let decoded = PrimitiveDateTime::from_sql(&data).unwrap().unwrap();
+        assert_eq!(decoded.date(), from_days(1, 1900));
+
+        // DateTime path.
+        let dt = crate::tds::time::DateTime::new(1, 0);
+        let data = ColumnData::DateTime(Some(dt));
+        let decoded = PrimitiveDateTime::from_sql(&data).unwrap().unwrap();
+        assert_eq!(decoded.date(), from_days(1, 1900));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn offset_date_time_from_sql_and_back() {
+        use crate::{FromSql, ToSql};
+
+        let date = Date::from_calendar_date(2020, Month::June, 15).unwrap();
+        let time = Time::from_hms(1, 2, 3).unwrap();
+        let days = to_days(date, 1) as u32;
+        let nanos: u64 = (time - Time::from_hms(0, 0, 0).unwrap())
+            .whole_nanoseconds()
+            .try_into()
+            .unwrap();
+        let increments = nanos / 100;
+
+        let dt2 = super::super::DateTime2::new(
+            super::super::Date::new(days),
+            super::super::Time::new(increments, 7),
+        );
+        let dto = super::super::DateTimeOffset::new(dt2, 60); // +1h offset
+
+        let data = ColumnData::DateTimeOffset(Some(dto));
+        let decoded = OffsetDateTime::from_sql(&data).unwrap().unwrap();
+
+        assert_eq!(
+            decoded.offset(),
+            UtcOffset::from_whole_seconds(3600).unwrap()
+        );
+
+        match decoded.to_sql() {
+            ColumnData::DateTimeOffset(Some(round_tripped)) => {
+                assert_eq!(round_tripped.offset, 60);
+            }
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn from_sql_null_variants_return_none() {
+        use crate::FromSql;
+
+        assert_eq!(Time::from_sql(&ColumnData::Time(None)).unwrap(), None);
+        assert_eq!(Date::from_sql(&ColumnData::Date(None)).unwrap(), None);
+        assert_eq!(
+            PrimitiveDateTime::from_sql(&ColumnData::DateTime(None)).unwrap(),
+            None
+        );
+        assert_eq!(
+            OffsetDateTime::from_sql(&ColumnData::DateTimeOffset(None)).unwrap(),
+            None
+        );
+    }
 }
