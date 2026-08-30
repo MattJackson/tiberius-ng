@@ -86,8 +86,11 @@ where
     conn.execute(format!("CREATE TABLE ##{} (id int)", table), &[])
         .await?;
     // One row committed before the transaction.
-    conn.execute(format!("INSERT INTO ##{} (id) VALUES (@P1)", table), &[&1i32])
-        .await?;
+    conn.execute(
+        format!("INSERT INTO ##{} (id) VALUES (@P1)", table),
+        &[&1i32],
+    )
+    .await?;
 
     conn.begin_transaction().await?;
     conn.execute(
@@ -121,8 +124,11 @@ where
         IsolationLevel::Serializable,
     ] {
         conn.begin_transaction_with_isolation(level).await?;
-        conn.execute(format!("INSERT INTO ##{} (id) VALUES (@P1)", table), &[&1i32])
-            .await?;
+        conn.execute(
+            format!("INSERT INTO ##{} (id) VALUES (@P1)", table),
+            &[&1i32],
+        )
+        .await?;
         conn.commit_transaction().await?;
     }
 
@@ -143,14 +149,20 @@ where
         .await?;
 
     conn.begin_transaction().await?;
-    conn.execute(format!("INSERT INTO ##{} (id) VALUES (@P1)", table), &[&10i32])
-        .await?;
+    conn.execute(
+        format!("INSERT INTO ##{} (id) VALUES (@P1)", table),
+        &[&10i32],
+    )
+    .await?;
     conn.rollback_transaction().await?;
 
     // The connection is reusable for a fresh transaction after a rollback.
     conn.begin_transaction().await?;
-    conn.execute(format!("INSERT INTO ##{} (id) VALUES (@P1)", table), &[&20i32])
-        .await?;
+    conn.execute(
+        format!("INSERT INTO ##{} (id) VALUES (@P1)", table),
+        &[&20i32],
+    )
+    .await?;
     conn.commit_transaction().await?;
 
     assert_eq!(1, row_count(&mut conn, &table).await?);
