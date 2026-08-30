@@ -290,4 +290,111 @@ mod tests {
             ColumnData::String(Some(Cow::from("x")))
         );
     }
+
+    #[test]
+    fn into_sql_owned_string_and_ref() {
+        let owned = String::from("abc");
+        assert_eq!(
+            (&owned).into_sql(),
+            ColumnData::String(Some(Cow::from("abc")))
+        );
+        assert_eq!(
+            Some(&owned).into_sql(),
+            ColumnData::String(Some(Cow::from("abc")))
+        );
+        assert_eq!(None::<&String>.into_sql(), ColumnData::String(None));
+    }
+
+    #[test]
+    fn into_sql_binary_option_variants() {
+        assert_eq!(None::<&[u8]>.into_sql(), ColumnData::Binary(None));
+
+        let bytes = vec![1u8, 2, 3];
+        assert_eq!(
+            Some(bytes.as_slice()).into_sql(),
+            ColumnData::Binary(Some(Cow::from(bytes.as_slice())))
+        );
+        assert_eq!(None::<&Vec<u8>>.into_sql(), ColumnData::Binary(None));
+        assert_eq!(
+            bytes.into_sql(),
+            ColumnData::Binary(Some(Cow::from(vec![1, 2, 3])))
+        );
+    }
+
+    #[test]
+    fn into_sql_cow_variants() {
+        let cow_str: Cow<'_, str> = Cow::Borrowed("hi");
+        assert_eq!(
+            cow_str.into_sql(),
+            ColumnData::String(Some(Cow::from("hi")))
+        );
+        assert_eq!(
+            Some(Cow::Borrowed("hi")).into_sql(),
+            ColumnData::String(Some(Cow::from("hi")))
+        );
+        assert_eq!(None::<Cow<'_, str>>.into_sql(), ColumnData::String(None));
+
+        let cow_bin: Cow<'_, [u8]> = Cow::Borrowed(&[1u8, 2][..]);
+        assert_eq!(
+            cow_bin.into_sql(),
+            ColumnData::Binary(Some(Cow::from(vec![1u8, 2])))
+        );
+        assert_eq!(
+            Some(Cow::<[u8]>::Borrowed(&[1u8, 2][..])).into_sql(),
+            ColumnData::Binary(Some(Cow::from(vec![1u8, 2])))
+        );
+        assert_eq!(None::<Cow<'_, [u8]>>.into_sql(), ColumnData::Binary(None));
+    }
+
+    #[test]
+    fn into_sql_xml_and_numeric() {
+        let xml = XmlData::new("<a/>".to_string());
+        assert_eq!(
+            (&xml).into_sql(),
+            ColumnData::Xml(Some(Cow::Borrowed(&xml)))
+        );
+        assert_eq!(
+            Some(&xml).into_sql(),
+            ColumnData::Xml(Some(Cow::Borrowed(&xml)))
+        );
+        assert_eq!(None::<&XmlData>.into_sql(), ColumnData::Xml(None));
+
+        let xml_owned = XmlData::new("<b/>".to_string());
+        assert_eq!(
+            xml_owned.clone().into_sql(),
+            ColumnData::Xml(Some(Cow::Owned(xml_owned)))
+        );
+
+        let n = Numeric::new_with_scale(42, 0);
+        assert_eq!(n.into_sql(), ColumnData::Numeric(Some(n)));
+    }
+
+    #[test]
+    fn to_sql_by_reference_scalars() {
+        // The macro-generated impls also cover `&T` for the base scalar types.
+        assert_eq!((&true).to_sql(), ColumnData::Bit(Some(true)));
+        assert_eq!((&8u8).to_sql(), ColumnData::U8(Some(8)));
+        assert_eq!((&16i16).to_sql(), ColumnData::I16(Some(16)));
+        assert_eq!((&64i64).to_sql(), ColumnData::I64(Some(64)));
+        assert_eq!((&1.5f32).to_sql(), ColumnData::F32(Some(1.5)));
+        assert_eq!((&2.5f64).to_sql(), ColumnData::F64(Some(2.5)));
+    }
+
+    #[test]
+    fn to_sql_cow_variants() {
+        let cow_str: Cow<'_, str> = Cow::Borrowed("hi");
+        assert_eq!(cow_str.to_sql(), ColumnData::String(Some(Cow::from("hi"))));
+
+        let cow_bin: Cow<'_, [u8]> = Cow::Borrowed(&[1u8, 2][..]);
+        assert_eq!(
+            cow_bin.to_sql(),
+            ColumnData::Binary(Some(Cow::from(vec![1u8, 2])))
+        );
+    }
+
+    #[test]
+    fn to_sql_xml() {
+        let xml = XmlData::new("<a/>".to_string());
+        assert_eq!(xml.to_sql(), ColumnData::Xml(Some(Cow::Borrowed(&xml))));
+    }
 }
