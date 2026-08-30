@@ -329,7 +329,7 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnFlag {
     /// The column can be null.
-    Nullable = 1 << 0,
+    Nullable = 1,
     /// Set for string columns with binary collation and always for the XML data
     /// type.
     CaseSensitive = 1 << 1,
@@ -374,7 +374,9 @@ impl TokenColMetaData<'static> {
             (column_count as usize).min(crate::tds::codec::column_data::MAX_PREALLOC),
         );
 
-        if column_count > 0 && column_count < 0xffff {
+        // `0xffff` is the "no metadata" sentinel; any other count drives the
+        // loop directly (a count of 0 simply iterates zero times).
+        if column_count < 0xffff {
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
                 let col_name = Cow::from(src.read_b_varchar().await?);
@@ -483,6 +485,25 @@ mod tests {
         assert_eq!(columns[0].name(), "id");
     }
 
+    #[test]
+    fn encode_writes_token_header_and_column_count() {
+        let cmd = TokenColMetaData {
+            columns: vec![
+                meta(TypeInfo::FixedLen(FixedLenType::Int4), "id"),
+                meta(TypeInfo::FixedLen(FixedLenType::Bit), "flag"),
+            ],
+        };
+
+        let mut buf = BytesMut::new();
+        cmd.encode(&mut buf).unwrap();
+
+        // First the ColMetaData token byte, then the little-endian column count.
+        assert_eq!(buf[0], TokenType::ColMetaData as u8);
+        assert_eq!(u16::from_le_bytes([buf[1], buf[2]]), 2);
+        // The two column bodies follow the 3-byte header.
+        assert!(buf.len() > 3);
+    }
+
     #[tokio::test]
     async fn zero_columns_yields_empty() {
         let mut buf = BytesMut::new();
@@ -573,6 +594,17 @@ mod tests {
                 },
                 "c decimal(18,2)",
             ),
+            // Numericn must render as `numeric(...)`, distinct from the
+            // `decimal(...)` fallback that every other precision type uses.
+            (
+                TypeInfo::VarLenSizedPrecision {
+                    ty: VarLenType::Numericn,
+                    size: 9,
+                    precision: 10,
+                    scale: 4,
+                },
+                "c numeric(10,4)",
+            ),
             (
                 TypeInfo::Xml {
                     schema: None,
@@ -602,6 +634,39 @@ mod tests {
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
         };
         assert_eq!(varlen.null_value(), ColumnData::I16(None));
+
+        // Each Intn width maps to a distinct integer column; 1 and 4 sit either
+        // side of the `_ => I64` fallback and pin their own arms.
+        let tinyint = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+        };
+        assert_eq!(tinyint.null_value(), ColumnData::U8(None));
+
+        let int4 = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 4, None)),
+        };
+        assert_eq!(int4.null_value(), ColumnData::I32(None));
+
+        let int8 = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+        };
+        assert_eq!(int8.null_value(), ColumnData::I64(None));
+
+        // Floatn splits on width too: 4 bytes is F32, anything else F64.
+        let real = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+        };
+        assert_eq!(real.null_value(), ColumnData::F32(None));
+
+        let double = BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+        };
+        assert_eq!(double.null_value(), ColumnData::F64(None));
 
         let guid = BaseMetaDataColumn {
             flags: BitFlags::empty(),
