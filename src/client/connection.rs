@@ -231,7 +231,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 split_payload.len() + HEADER_BYTES,
             );
 
-            self.feed_to_wire(header, split_payload).await?;
+            self.write_to_wire(header, split_payload).await?;
         }
 
         self.flush_sink().await?;
@@ -293,18 +293,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         let packet = Packet::new(header, data);
         self.transport.send(packet).await?;
-
-        Ok(())
-    }
-
-    /// Buffers a packet into the transport without flushing it to the socket.
-    /// Callers must `flush_sink()` afterwards. Used to write a multi-packet
-    /// message with a single flush instead of one flush per packet.
-    async fn feed_to_wire(&mut self, header: PacketHeader, data: BytesMut) -> crate::Result<()> {
-        self.flushed = false;
-
-        let packet = Packet::new(header, data);
-        self.transport.feed(packet).await?;
 
         Ok(())
     }
