@@ -52,10 +52,10 @@ jobs:
       - name: Run shard
         run: |
           cargo mutants --features all \
+            --cargo-test-arg --lib \
             --shard ${{ matrix.shard }}/8 \
             -j "$(nproc)" \
-            --output "mutants-shard-${{ matrix.shard }}" \
-            -- --lib
+            --output "mutants-shard-${{ matrix.shard }}"
       - name: Upload shard results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

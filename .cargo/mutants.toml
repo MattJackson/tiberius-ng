@@ -10,11 +10,12 @@
 # gap in the tests. The full run is sharded across EC2 runners — see
 # `.github/workflows/mutants.yml`.
 
-# Only the library unit tests can run without a live SQL Server. `--lib` is
-# passed on the cargo-mutants command line as `-- --lib` (cargo-level), which
-# reliably restricts both the build and test phases to the library — the
-# `tests/` integration targets require a real server and would fail the
-# baseline. (See scripts/mutants-ec2.sh and .github/workflows/mutants.yml.)
+# Only the library unit tests can run without a live SQL Server. The test phase
+# is restricted to the library with `--cargo-test-arg --lib`, which forwards
+# `--lib` to `cargo test` (the target selector). NOTE: `-- --lib` does NOT work
+# — arguments after `--` go to the test *harness*, where `--lib` is treated as a
+# test-name filter that matches almost nothing, so nearly every mutant would
+# survive. (See scripts/mutants-ec2.sh and .github/workflows/mutants.yml.)
 
 # Files excluded from mutation: their behaviour is driven by a live TCP/TLS
 # socket to SQL Server, so their mutants cannot be caught by offline unit tests
@@ -40,6 +41,13 @@ exclude_globs = [
 # focuses on real logic.
 exclude_re = [
     "replace [A-Za-z_:<>]+::(get_)?[a-z_]+ -> .* with (\\(\\)|Default::default\\(\\))",
+    # Trivial unit-returning setters (`fn x(&mut self, v) { self.x = v }`): their
+    # body-removal mutant renders as "... with ()". There is no branch to get
+    # wrong and no getter to assert against, so a unit test would be tautological.
+    "replace [\\w:<>'& ]+::[a-z_]+ with \\(\\)",
+    # `From<E> for Error` impls are thin wrappers (`Error::Tls(format!(...))`);
+    # exercising every foreign error type's conversion adds no logic coverage.
+    "impl From<.+> for Error",
 ]
 
 # A generous per-mutant timeout; a mutation that causes an infinite loop is a
