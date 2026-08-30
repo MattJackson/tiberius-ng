@@ -1,5 +1,10 @@
 # Configuration for `cargo mutants` (mutation testing).
 #
+# This file MUST live at `.cargo/mutants.toml` — that is the only path
+# cargo-mutants (v27) auto-discovers. A copy at the repo root is silently
+# ignored, so the exclusions below would not apply and the run would mutate
+# socket-driven code that offline unit tests can never catch.
+#
 # Mutation testing runs the unit-test suite (`--lib`) against thousands of
 # small code mutations; a mutation that no test catches ("missed") points at a
 # gap in the tests. The full run is sharded across EC2 runners — see
