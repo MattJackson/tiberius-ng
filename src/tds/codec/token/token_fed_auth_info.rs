@@ -227,6 +227,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn decode_rejects_oversized_token_length() {
+        // A TokenLength above MAX_TOKEN_BODY must be rejected before any body is
+        // read (the `token_length > MAX_TOKEN_BODY` guard).
+        use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+        use bytes::{BufMut, BytesMut};
+
+        let mut buf = BytesMut::new();
+        buf.put_u32_le((super::super::MAX_TOKEN_BODY + 1) as u32);
+
+        let err = TokenFedAuthInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("oversized token length must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[test]
+    fn parse_rejects_truncated_dword() {
+        // A body too short to even read CountOfInfoIDs (a DWORD) trips the
+        // `read_u32` truncation guard.
+        let err = TokenFedAuthInfo::parse(&[0u8, 0u8]).expect_err("truncated body must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[test]
+    fn parse_rejects_missing_option_id() {
+        // CountOfInfoIDs claims one option, but the body ends right after the
+        // count, so reading the option id is out of bounds.
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes());
+
+        let err = TokenFedAuthInfo::parse(&body).expect_err("missing option id must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[test]
+    fn parse_rejects_odd_data_length() {
+        // A data length that is not a multiple of two cannot be valid UTF-16.
+        let count: u32 = 1;
+        let header_len = 4 + 9;
+        let mut body = Vec::new();
+        body.extend_from_slice(&count.to_le_bytes());
+        body.push(FED_AUTH_INFO_ID_STSURL);
+        body.extend_from_slice(&3u32.to_le_bytes()); // odd data len
+        body.extend_from_slice(&(header_len as u32).to_le_bytes()); // offset
+        body.extend_from_slice(&[0u8, 0u8, 0u8]); // 3 data bytes
+
+        let err = TokenFedAuthInfo::parse(&body).expect_err("odd data length must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[test]
+    fn parse_rejects_invalid_utf16() {
+        // Even-length but not valid UTF-16 (a lone high surrogate) must error.
+        let count: u32 = 1;
+        let header_len = 4 + 9;
+        let mut body = Vec::new();
+        body.extend_from_slice(&count.to_le_bytes());
+        body.push(FED_AUTH_INFO_ID_STSURL);
+        body.extend_from_slice(&2u32.to_le_bytes()); // data len
+        body.extend_from_slice(&(header_len as u32).to_le_bytes()); // offset
+        body.extend_from_slice(&0xD800u16.to_le_bytes()); // lone high surrogate
+
+        let err = TokenFedAuthInfo::parse(&body).expect_err("invalid UTF-16 must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[tokio::test]
     async fn decode_accepts_token_length_at_maximum() {
         // The length bound check is `token_length > MAX_TOKEN_BODY`, so a token
         // whose length is exactly MAX_TOKEN_BODY must be accepted. `>=` or `==`

@@ -269,4 +269,31 @@ mod tests {
         assert_eq!(Error::Utf8, Error::Utf8);
         assert_ne!(Error::Utf8, Error::Utf16);
     }
+
+    #[test]
+    fn from_connection_string_error() {
+        let cs_err = connection_string::Error::new("bad connection string");
+        let err: Error = cs_err.into();
+        match err {
+            Error::Conversion(msg) => assert!(msg.contains("bad connection string")),
+            _ => panic!("expected Conversion"),
+        }
+    }
+
+    #[cfg(all(unix, feature = "sspi-rs"))]
+    #[test]
+    fn from_sspi_error() {
+        let sspi_err = sspi::Error::new(sspi::ErrorKind::InternalError, "sspi boom");
+        assert!(matches!(Error::from(sspi_err), Error::SspiRs(_)));
+    }
+
+    #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
+    #[test]
+    fn from_gssapi_error() {
+        let gss_err = libgssapi::error::Error {
+            major: libgssapi::error::MajorFlags::empty(),
+            minor: 0,
+        };
+        assert!(matches!(Error::from(gss_err), Error::Gssapi(_)));
+    }
 }

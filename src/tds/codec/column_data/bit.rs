@@ -46,4 +46,15 @@ mod tests {
         let data = decode(&mut buf.into_sql_read_bytes()).await.unwrap();
         assert_eq!(data, ColumnData::Bit(Some(true)));
     }
+
+    // A length prefix other than 0 or 1 is an invalid bit encoding. Covers
+    // the error arm at lines 12-16.
+    #[tokio::test]
+    async fn decode_invalid_length_errors() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(2); // invalid length
+
+        let err = decode(&mut buf.into_sql_read_bytes()).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
 }

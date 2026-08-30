@@ -423,6 +423,154 @@ mod tests {
         reader.context_mut().set_packet_size(8192);
         assert_eq!(reader.context().packet_size(), 8192);
     }
+
+    // The length prefix cannot be read (empty wire) — exercises the error arm of
+    // the varchar length read (`Poll::Ready(Err(..))`).
+    #[tokio::test]
+    async fn b_varchar_length_read_error() {
+        let buf = BytesMut::new();
+        assert!(buf.into_sql_read_bytes().read_b_varchar().await.is_err());
+    }
+
+    // The length is read but the character payload is truncated — exercises the
+    // error arm of the inner u16 read within the varchar loop.
+    #[tokio::test]
+    async fn b_varchar_data_read_error() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(1); // announce one u16 char...
+        buf.put_u8(0x41); // ...but supply only a single byte
+        assert!(buf.into_sql_read_bytes().read_b_varchar().await.is_err());
+    }
+
+    // A lone UTF-16 surrogate makes `String::from_utf16` fail — exercises the
+    // invalid-UTF-16 error mapping at the end of the varchar reader.
+    #[tokio::test]
+    async fn b_varchar_invalid_utf16_error() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(1);
+        buf.put_u16_le(0xD800); // unpaired high surrogate
+        assert!(buf.into_sql_read_bytes().read_b_varchar().await.is_err());
+    }
+
+    // `debug_buffer` for the test reader is a `todo!()`; calling it must panic.
+    #[test]
+    #[should_panic]
+    fn debug_buffer_panics() {
+        let reader = BytesMut::new().into_sql_read_bytes();
+        reader.debug_buffer();
+    }
+}
+
+// Tests for the `Poll::Pending` / clean-EOF branches of the readers, which
+// require an `AsyncRead` that can return `Pending` / `Ok(0)` on demand and a
+// manually driven poll.
+#[cfg(test)]
+mod poll_branch_tests {
+    use crate::tds::Context;
+    use crate::SqlReadBytes;
+    use bytes::{BufMut, BytesMut};
+    use futures_util::io::AsyncRead;
+    use std::future::Future;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context as TaskContext, Poll};
+
+    enum Then {
+        Pending,
+        Eof,
+    }
+
+    // Hands out `data` while enough bytes remain, then switches to returning
+    // either `Poll::Pending` or a clean EOF (`Ok(0)`).
+    struct ScriptedReader {
+        data: BytesMut,
+        then: Then,
+        ctx: Context,
+    }
+
+    impl ScriptedReader {
+        fn new(data: BytesMut, then: Then) -> Self {
+            Self {
+                data,
+                then,
+                ctx: Context::new(),
+            }
+        }
+    }
+
+    impl AsyncRead for ScriptedReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut TaskContext<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            let size = buf.len();
+
+            if size > 0 && this.data.len() >= size {
+                buf.copy_from_slice(this.data.split_to(size).as_ref());
+                return Poll::Ready(Ok(size));
+            }
+
+            match this.then {
+                Then::Pending => Poll::Pending,
+                Then::Eof => Poll::Ready(Ok(0)),
+            }
+        }
+    }
+
+    impl SqlReadBytes for ScriptedReader {
+        fn debug_buffer(&self) {}
+        fn context(&self) -> &Context {
+            &self.ctx
+        }
+        fn context_mut(&mut self) -> &mut Context {
+            &mut self.ctx
+        }
+    }
+
+    fn poll_once<F: Future>(fut: F) -> Poll<F::Output> {
+        let waker = std::task::Waker::noop();
+        let mut cx = TaskContext::from_waker(waker);
+        let mut fut = fut;
+        // Safety: `fut` lives on the stack for the duration of this call and is
+        // never moved after being pinned.
+        let fut = unsafe { Pin::new_unchecked(&mut fut) };
+        fut.poll(&mut cx)
+    }
+
+    // The varchar length read yields `Pending` (no bytes available yet).
+    #[test]
+    fn varchar_length_pending() {
+        let mut reader = ScriptedReader::new(BytesMut::new(), Then::Pending);
+        assert!(matches!(poll_once(reader.read_b_varchar()), Poll::Pending));
+    }
+
+    // The length is read, but the character payload read yields `Pending`.
+    #[test]
+    fn varchar_data_pending() {
+        let mut data = BytesMut::new();
+        data.put_u8(1); // length available, character bytes are not
+        let mut reader = ScriptedReader::new(data, Then::Pending);
+        assert!(matches!(poll_once(reader.read_b_varchar()), Poll::Pending));
+    }
+
+    // A fixed-width numeric read yields `Pending` when no bytes are available.
+    #[test]
+    fn fixed_width_read_pending() {
+        let mut reader = ScriptedReader::new(BytesMut::new(), Then::Pending);
+        assert!(matches!(poll_once(reader.read_u32_le()), Poll::Pending));
+    }
+
+    // A clean EOF (`Ok(0)`) mid-read surfaces as an `UnexpectedEof` error.
+    #[test]
+    fn fixed_width_read_unexpected_eof() {
+        let mut reader = ScriptedReader::new(BytesMut::new(), Then::Eof);
+        match poll_once(reader.read_u8()) {
+            Poll::Ready(Err(e)) => assert_eq!(e.kind(), io::ErrorKind::UnexpectedEof),
+            other => panic!("expected UnexpectedEof, got {other:?}"),
+        }
+    }
 }
 
 #[cfg(test)]

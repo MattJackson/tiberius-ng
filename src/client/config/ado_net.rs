@@ -247,6 +247,23 @@ mod tests {
     }
 
     #[test]
+    fn server_parsing_missing_key() -> crate::Result<()> {
+        // No `server`/`data source` key at all -> an all-`None` definition.
+        let ado: AdoNetConfig = "database=Foo".parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(None, server.host);
+        assert_eq!(None, server.port);
+        assert_eq!(None, server.instance);
+
+        // And the same path through the public constructor.
+        let config = crate::Config::from_ado_string("database=Foo")?;
+        assert_eq!("localhost", config.get_host());
+
+        Ok(())
+    }
+
+    #[test]
     fn database_parsing() -> crate::Result<()> {
         let test_str = "database=Foo";
         let ado: AdoNetConfig = test_str.parse()?;

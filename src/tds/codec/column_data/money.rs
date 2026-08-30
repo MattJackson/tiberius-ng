@@ -109,6 +109,23 @@ mod tests {
         assert_eq!(decode_bytes(&buf), 1234.5678);
     }
 
+    // A length other than 0/4/8 is an invalid money encoding. Covers 38-42.
+    #[tokio::test]
+    async fn decode_invalid_length_errors() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(0);
+        let err = decode(&mut buf.into_sql_read_bytes(), 5).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // The `decode_bytes` test helper panics on an unexpected length prefix.
+    // Covers line 99 (the helper's fallthrough arm).
+    #[test]
+    fn decode_bytes_invalid_length_panics() {
+        let result = std::panic::catch_unwind(|| decode_bytes(&[2u8, 0, 0, 0, 0]));
+        assert!(result.is_err());
+    }
+
     #[test]
     fn encode_money_roundtrips() {
         for val in [0.0, 1.0, -1.0, 1234.5678, -9999.9999, 92233720368.5477] {

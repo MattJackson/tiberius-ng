@@ -362,6 +362,42 @@ mod tests {
         );
     }
 
+    // The tds73 `from_sql` NaiveDateTime path has a dedicated arm for the legacy
+    // `ColumnData::DateTime` wire type; exercise it directly (round-trips produce
+    // `DateTime2`, never `DateTime`, so this arm is otherwise unreachable).
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn naive_datetime_from_legacy_datetime_column() {
+        let cd = ColumnData::DateTime(Some(crate::tds::time::DateTime::new(0, 0)));
+        let dt = NaiveDateTime::from_sql(&cd).unwrap().unwrap();
+        assert_eq!(
+            dt,
+            NaiveDateTime::new(
+                NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
+                NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            )
+        );
+    }
+
+    // The `DateTimeOffset -> DateTime<Utc>` conversion arm (distinct from the
+    // `DateTime<FixedOffset>` arm exercised by the round-trip test).
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn datetime_offset_reads_as_utc() {
+        let offset = FixedOffset::east_opt(2 * 3600).unwrap();
+        let naive = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2015, 3, 4).unwrap(),
+            NaiveTime::from_hms_opt(1, 2, 3).unwrap(),
+        );
+        let dt: chrono::DateTime<FixedOffset> =
+            chrono::DateTime::from_naive_utc_and_offset(naive, offset);
+        let cd: ColumnData<'static> = dt.into_sql();
+        assert!(matches!(cd, ColumnData::DateTimeOffset(Some(_))));
+
+        let utc = chrono::DateTime::<Utc>::from_sql(&cd).unwrap();
+        assert!(utc.is_some());
+    }
+
     #[cfg(feature = "tds73")]
     #[test]
     fn null_maps_to_none() {

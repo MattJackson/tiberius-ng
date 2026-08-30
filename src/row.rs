@@ -689,6 +689,7 @@ mod tests {
 
     #[test]
     fn column_type_from_xml_and_udt_type_info() {
+        use crate::tds::codec::UdtInfo;
         use crate::tds::xml::XmlSchema;
         use std::sync::Arc as StdArc;
 
@@ -697,5 +698,56 @@ mod tests {
             size: 0,
         };
         assert_eq!(ColumnType::from(&ti), ColumnType::Xml);
+
+        let ti = TypeInfo::Udt(UdtInfo {
+            max_byte_size: 0xffff,
+            db_name: "db".to_string(),
+            schema_name: "dbo".to_string(),
+            type_name: "geometry".to_string(),
+            assembly_qualified_name: "asm".to_string(),
+        });
+        assert_eq!(ColumnType::from(&ti), ColumnType::Udt);
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn column_type_from_var_len_sized_tds73_type_info() {
+        use crate::tds::codec::VarLenType;
+        use crate::VarLenContext;
+
+        let cases = [
+            (VarLenType::Daten, ColumnType::Daten),
+            (VarLenType::Timen, ColumnType::Timen),
+            (VarLenType::Datetime2, ColumnType::Datetime2),
+            (VarLenType::DatetimeOffsetn, ColumnType::DatetimeOffsetn),
+        ];
+
+        for (ty, expected) in cases {
+            let ti = TypeInfo::VarLenSized(VarLenContext::new(ty, 8, None));
+            assert_eq!(ColumnType::from(&ti), expected, "{:?}", ty);
+        }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn column_type_from_var_len_sized_precision_tds73_type_info() {
+        use crate::tds::codec::VarLenType;
+
+        let cases = [
+            (VarLenType::Daten, ColumnType::Daten),
+            (VarLenType::Timen, ColumnType::Timen),
+            (VarLenType::Datetime2, ColumnType::Datetime2),
+            (VarLenType::DatetimeOffsetn, ColumnType::DatetimeOffsetn),
+        ];
+
+        for (ty, expected) in cases {
+            let ti = TypeInfo::VarLenSizedPrecision {
+                ty,
+                size: 8,
+                precision: 0,
+                scale: 7,
+            };
+            assert_eq!(ColumnType::from(&ti), expected, "{:?}", ty);
+        }
     }
 }

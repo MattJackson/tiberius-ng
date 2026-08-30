@@ -856,6 +856,192 @@ mod tests {
     }
 
     #[test]
+    fn display_formats_fixed_len_money_and_datetime_types() {
+        // Covers the FixedLenType Display arms not exercised elsewhere:
+        // tinyint/smallint/smalldatetime/real/money/datetime/smallmoney/bigint
+        // and the `Null` sentinel (which surfaces as `int`).
+        let cases = vec![
+            (TypeInfo::FixedLen(FixedLenType::Int1), "c tinyint"),
+            (TypeInfo::FixedLen(FixedLenType::Int2), "c smallint"),
+            (
+                TypeInfo::FixedLen(FixedLenType::Datetime4),
+                "c smalldatetime",
+            ),
+            (TypeInfo::FixedLen(FixedLenType::Float4), "c real"),
+            (TypeInfo::FixedLen(FixedLenType::Money), "c money"),
+            (TypeInfo::FixedLen(FixedLenType::Datetime), "c datetime"),
+            (TypeInfo::FixedLen(FixedLenType::Money4), "c smallmoney"),
+            (TypeInfo::FixedLen(FixedLenType::Int8), "c bigint"),
+            (TypeInfo::FixedLen(FixedLenType::Null), "c int"),
+        ];
+
+        for (ty, expected) in cases {
+            let expected = expected.replacen("c ", "[c] ", 1);
+            assert_eq!(format!("{}", meta(ty, "c")), expected);
+        }
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn display_formats_tds73_date_time_types() {
+        // date/time/datetime2/datetimeoffset Display arms (tds73-only).
+        let cases = vec![
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
+                "c date",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
+                "c time",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
+                "c datetime2(7)",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::DatetimeOffsetn, 7, None)),
+                "c datetimeoffset",
+            ),
+        ];
+
+        for (ty, expected) in cases {
+            let expected = expected.replacen("c ", "[c] ", 1);
+            assert_eq!(format!("{}", meta(ty, "c")), expected);
+        }
+    }
+
+    #[test]
+    fn display_var_len_other_fallback_uses_debug_name() {
+        // A VarLenSized carrying a type not matched by any explicit Display arm
+        // (e.g. Decimaln) hits the `other => {other:?}` fallback rather than
+        // panicking.
+        let ty = TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Decimaln, 17, None));
+        assert_eq!(format!("{}", meta(ty, "c")), "[c] Decimaln");
+    }
+
+    #[test]
+    fn null_value_all_fixed_len() {
+        use FixedLenType::*;
+        let cases = [
+            (Null, ColumnData::I32(None)),
+            (Int1, ColumnData::U8(None)),
+            (Bit, ColumnData::Bit(None)),
+            (Int2, ColumnData::I16(None)),
+            (Int4, ColumnData::I32(None)),
+            (Datetime4, ColumnData::SmallDateTime(None)),
+            (Float4, ColumnData::F32(None)),
+            (Money, ColumnData::F64(None)),
+            (Datetime, ColumnData::DateTime(None)),
+            (Float8, ColumnData::F64(None)),
+            (Money4, ColumnData::F32(None)),
+            (Int8, ColumnData::I64(None)),
+        ];
+
+        for (ty, expected) in cases {
+            let base = BaseMetaDataColumn {
+                flags: BitFlags::empty(),
+                ty: TypeInfo::FixedLen(ty),
+            };
+            assert_eq!(base.null_value(), expected);
+        }
+    }
+
+    fn vsize_null(ty: VarLenType, len: usize) -> ColumnData<'static> {
+        BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(ty, len, None)),
+        }
+        .null_value()
+    }
+
+    #[test]
+    fn null_value_all_var_len_sized() {
+        use VarLenType::*;
+        assert_eq!(vsize_null(Guid, 16), ColumnData::Guid(None));
+        assert_eq!(vsize_null(Bitn, 1), ColumnData::Bit(None));
+        assert_eq!(vsize_null(Decimaln, 17), ColumnData::Numeric(None));
+        assert_eq!(vsize_null(Numericn, 17), ColumnData::Numeric(None));
+        assert_eq!(vsize_null(Money, 8), ColumnData::F64(None));
+        assert_eq!(vsize_null(Datetimen, 8), ColumnData::DateTime(None));
+        assert_eq!(vsize_null(BigVarBin, 100), ColumnData::Binary(None));
+        assert_eq!(vsize_null(BigVarChar, 100), ColumnData::String(None));
+        assert_eq!(vsize_null(BigBinary, 10), ColumnData::Binary(None));
+        assert_eq!(vsize_null(BigChar, 10), ColumnData::String(None));
+        assert_eq!(vsize_null(NVarchar, 100), ColumnData::String(None));
+        assert_eq!(vsize_null(NChar, 10), ColumnData::String(None));
+        assert_eq!(vsize_null(Xml, 0), ColumnData::Xml(None));
+        assert_eq!(vsize_null(Udt, 0), ColumnData::Binary(None));
+        assert_eq!(vsize_null(Text, 0), ColumnData::String(None));
+        assert_eq!(vsize_null(Image, 0), ColumnData::Binary(None));
+        assert_eq!(vsize_null(NText, 0), ColumnData::String(None));
+        assert_eq!(vsize_null(SSVariant, 0), ColumnData::String(None));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn null_value_var_len_sized_tds73() {
+        use VarLenType::*;
+        assert_eq!(vsize_null(Daten, 3), ColumnData::Date(None));
+        assert_eq!(vsize_null(Timen, 7), ColumnData::Time(None));
+        assert_eq!(vsize_null(Datetime2, 7), ColumnData::DateTime2(None));
+        assert_eq!(
+            vsize_null(DatetimeOffsetn, 7),
+            ColumnData::DateTimeOffset(None)
+        );
+    }
+
+    fn vprec_null(ty: VarLenType) -> ColumnData<'static> {
+        BaseMetaDataColumn {
+            flags: BitFlags::empty(),
+            ty: TypeInfo::VarLenSizedPrecision {
+                ty,
+                size: 8,
+                precision: 18,
+                scale: 2,
+            },
+        }
+        .null_value()
+    }
+
+    #[test]
+    fn null_value_all_var_len_precision() {
+        use VarLenType::*;
+        assert_eq!(vprec_null(Guid), ColumnData::Guid(None));
+        assert_eq!(vprec_null(Intn), ColumnData::I32(None));
+        assert_eq!(vprec_null(Bitn), ColumnData::Bit(None));
+        assert_eq!(vprec_null(Decimaln), ColumnData::Numeric(None));
+        assert_eq!(vprec_null(Numericn), ColumnData::Numeric(None));
+        assert_eq!(vprec_null(Floatn), ColumnData::F32(None));
+        assert_eq!(vprec_null(Money), ColumnData::F64(None));
+        assert_eq!(vprec_null(Datetimen), ColumnData::DateTime(None));
+        assert_eq!(vprec_null(BigVarBin), ColumnData::Binary(None));
+        assert_eq!(vprec_null(BigVarChar), ColumnData::String(None));
+        assert_eq!(vprec_null(BigBinary), ColumnData::Binary(None));
+        assert_eq!(vprec_null(BigChar), ColumnData::String(None));
+        assert_eq!(vprec_null(NVarchar), ColumnData::String(None));
+        assert_eq!(vprec_null(NChar), ColumnData::String(None));
+        assert_eq!(vprec_null(Xml), ColumnData::Xml(None));
+        assert_eq!(vprec_null(Udt), ColumnData::Binary(None));
+        assert_eq!(vprec_null(Text), ColumnData::String(None));
+        assert_eq!(vprec_null(Image), ColumnData::Binary(None));
+        assert_eq!(vprec_null(NText), ColumnData::String(None));
+        assert_eq!(vprec_null(SSVariant), ColumnData::String(None));
+    }
+
+    #[cfg(feature = "tds73")]
+    #[test]
+    fn null_value_var_len_precision_tds73() {
+        use VarLenType::*;
+        assert_eq!(vprec_null(Daten), ColumnData::Date(None));
+        assert_eq!(vprec_null(Timen), ColumnData::Time(None));
+        assert_eq!(vprec_null(Datetime2), ColumnData::DateTime2(None));
+        assert_eq!(
+            vprec_null(DatetimeOffsetn),
+            ColumnData::DateTimeOffset(None)
+        );
+    }
+
+    #[test]
     fn column_flag_bits_are_distinct() {
         let all = ColumnFlag::Nullable
             | ColumnFlag::CaseSensitive

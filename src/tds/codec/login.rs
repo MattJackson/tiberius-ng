@@ -763,6 +763,74 @@ mod tests {
     }
 
     #[test]
+    fn hostname_and_packet_size_setters_apply() {
+        let mut login = LoginMessage::new();
+        login.hostname("my-workstation");
+        login.packet_size(8192);
+
+        assert_eq!(login.hostname, "my-workstation");
+        assert_eq!(login.packet_size, 8192);
+    }
+
+    #[cfg(any(
+        all(unix, any(feature = "integrated-auth-gssapi", feature = "sspi-rs")),
+        windows
+    ))]
+    #[test]
+    fn integrated_security_setter_toggles_flag() {
+        let mut login = LoginMessage::new();
+
+        login.integrated_security(Some(vec![1, 2, 3, 4]));
+        assert!(login
+            .option_flags_2
+            .contains(OptionFlag2::IntegratedSecurity));
+        assert_eq!(
+            login.integrated_security.as_deref(),
+            Some(&[1, 2, 3, 4][..])
+        );
+
+        login.integrated_security(None);
+        assert!(!login
+            .option_flags_2
+            .contains(OptionFlag2::IntegratedSecurity));
+        assert!(login.integrated_security.is_none());
+    }
+
+    #[test]
+    fn encode_round_trips_integrated_security_bytes() {
+        let mut payload = BytesMut::new();
+        let mut login = LoginMessage::new();
+        // Set the field directly to exercise the ibSSPI encode branch without
+        // depending on the platform-gated setter.
+        login.integrated_security = Some(vec![9, 8, 7, 6, 5]);
+        login
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
+        assert_eq!(decoded.integrated_security, Some(vec![9, 8, 7, 6, 5]));
+    }
+
+    #[test]
+    fn fed_auth_without_nonce_round_trips() {
+        let mut payload = BytesMut::new();
+        let mut login = LoginMessage::new();
+        login.aad_token("fake-aad-token", true, None);
+        login
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
+        assert_eq!(login, decoded);
+        assert_eq!(
+            decoded.fed_auth_ext.expect("fed auth ext present").nonce,
+            None
+        );
+    }
+
+    #[test]
     fn debug_redacts_fed_auth_token() {
         let mut login = LoginMessage::new();
         login.aad_token("super-secret-aad-token", true, Some([9u8; 32]));

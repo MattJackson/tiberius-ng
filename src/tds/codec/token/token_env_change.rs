@@ -548,6 +548,25 @@ mod tests {
     }
 
     #[test]
+    fn sql_collation_display_both_and_new_only() {
+        use crate::tds::Collation;
+
+        // Both old and new present: "from {old} to {new}".
+        let both = TokenEnvChange::SqlCollation {
+            old: Some(Collation::new(13632521, 52)),
+            new: Some(Collation::new(13632521, 52)),
+        };
+        assert!(format!("{}", both).starts_with("SQL collation change from "));
+
+        // Only new present: "changed to {new}".
+        let new_only = TokenEnvChange::SqlCollation {
+            old: None,
+            new: Some(Collation::new(13632521, 52)),
+        };
+        assert!(format!("{}", new_only).starts_with("SQL collation changed to "));
+    }
+
+    #[test]
     fn token_env_change_display_variants() {
         assert_eq!(
             format!("{}", TokenEnvChange::CommitTransaction),

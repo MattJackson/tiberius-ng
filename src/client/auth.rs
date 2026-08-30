@@ -166,4 +166,36 @@ mod tests {
         assert!(!aad.contains("aad-secret-token"), "AAD token leaked: {aad}");
         assert!(aad.contains("HIDDEN"));
     }
+
+    #[test]
+    fn debug_none_variant() {
+        assert_eq!(format!("{:?}", AuthMethod::None), "None");
+    }
+
+    #[cfg(any(all(windows, feature = "winauth"), all(unix, feature = "sspi-rs")))]
+    #[test]
+    fn windows_auth_parses_domain_and_debug_redacts() {
+        // `DOMAIN\user` form exercises the domain-splitting branch of `windows()`.
+        let auth = AuthMethod::windows("DOMAIN\\user", "win-secret");
+        let dbg = format!("{:?}", auth);
+        assert!(dbg.contains("Windows"), "variant name missing: {dbg}");
+        assert!(dbg.contains("DOMAIN"), "domain not preserved: {dbg}");
+        assert!(dbg.contains("user"), "user not preserved: {dbg}");
+        assert!(!dbg.contains("win-secret"), "password leaked: {dbg}");
+
+        // No backslash exercises the domain-less branch.
+        let plain = AuthMethod::windows("plainuser", "pw");
+        let dbg = format!("{:?}", plain);
+        assert!(dbg.contains("plainuser"), "user not preserved: {dbg}");
+        assert!(dbg.contains("None"), "domain should be None: {dbg}");
+    }
+
+    #[cfg(any(
+        all(windows, feature = "winauth"),
+        all(unix, feature = "integrated-auth-gssapi")
+    ))]
+    #[test]
+    fn integrated_debug() {
+        assert_eq!(format!("{:?}", AuthMethod::Integrated), "Integrated");
+    }
 }

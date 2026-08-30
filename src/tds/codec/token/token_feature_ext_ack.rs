@@ -106,6 +106,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn decode_rejects_invalid_data_length() {
+        // A FEDAUTH ack with a data length that is neither 0 nor 32 is invalid.
+        let mut buf = BytesMut::new();
+        buf.put_u8(FEA_EXT_FEDAUTH);
+        buf.put_u32_le(5);
+        buf.extend_from_slice(&[0u8; 5]);
+
+        let err = TokenFeatureExtAck::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("invalid data length must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn decode_rejects_unsupported_feature() {
+        // A feature id that is neither the terminator nor FEDAUTH is unsupported.
+        let mut buf = BytesMut::new();
+        buf.put_u8(0x99);
+
+        let err = TokenFeatureExtAck::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("unsupported feature must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[tokio::test]
     async fn empty_feature_list() {
         let mut buf = BytesMut::new();
         buf.put_u8(FEA_EXT_TERMINATOR);

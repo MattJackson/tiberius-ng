@@ -641,6 +641,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn var_len_context_encode_xml_emits_only_type_byte() {
+        // Xml in a VarLenContext carries no length bytes: encode must emit only
+        // the type token (the `VarLenType::Xml => ()` arm).
+        let mut buf = BytesMut::new();
+        VarLenContext::new(VarLenType::Xml, 0, None)
+            .encode(&mut buf)
+            .expect("encode must succeed");
+        assert_eq!(buf.as_ref(), &[VarLenType::Xml as u8]);
+    }
+
+    #[test]
+    fn var_len_context_encode_unsupported_type_errors() {
+        // Udt is not encodable through VarLenContext (it has its own TypeInfo
+        // arm), so it hits the `typ => Err(..)` fallback.
+        let mut buf = BytesMut::new();
+        let err = VarLenContext::new(VarLenType::Udt, 0, None)
+            .encode(&mut buf)
+            .expect_err("encoding a Udt var-len context must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn decode_rejects_invalid_type_byte() {
+        // A leading byte that is neither a FixedLenType nor a VarLenType must be
+        // rejected (`Err(())` arm of the VarLenType match).
+        let mut buf = BytesMut::new();
+        buf.put_u8(0x00);
+
+        let err = TypeInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect_err("invalid type byte must error");
+        assert!(matches!(err, Error::Protocol(_)));
+    }
+
+    #[tokio::test]
+    async fn decode_udt_info_round_trips() {
+        // Exercises the UDT_INFO decode arm: max_byte_size + three b_varchars +
+        // a us_varchar assembly-qualified name.
+        let ti = TypeInfo::Udt(UdtInfo {
+            max_byte_size: 0xffff,
+            db_name: "db".to_string(),
+            schema_name: "dbo".to_string(),
+            type_name: "geometry".to_string(),
+            assembly_qualified_name: "asm".to_string(),
+        });
+
+        let mut buf = BytesMut::new();
+        ti.clone().encode(&mut buf).expect("encode must succeed");
+
+        let decoded = TypeInfo::decode(&mut buf.into_sql_read_bytes())
+            .await
+            .expect("decode must succeed");
+        assert_eq!(decoded, ti);
+    }
+
     #[tokio::test]
     async fn decode_rejects_scale_greater_than_precision() {
         // scale > precision must be rejected.

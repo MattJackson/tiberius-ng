@@ -478,7 +478,7 @@ mod tests {
     use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
     use bytes::{BufMut, BytesMut};
 
-    fn variant_reader(payload: &[u8]) -> impl SqlReadBytes + Unpin {
+    fn variant_reader(payload: &[u8]) -> impl SqlReadBytes {
         let mut buf = BytesMut::new();
         buf.put_u32_le(payload.len() as u32);
         buf.extend_from_slice(payload);
@@ -802,5 +802,189 @@ mod tests {
         let mut buf = BytesMut::new();
         encode(&mut buf, ColumnData::Binary(Some(bytes.into())))
             .expect("binary exactly at the limit must encode");
+    }
+
+    /// Builds a reader from a raw buffer where `total_len` is set explicitly
+    /// (rather than derived from the payload), so the length-guard error arms
+    /// can be exercised. Covers lines 63-65, 72-78, 88-90, 98-104.
+    fn raw_reader(total_len: u32, rest: &[u8]) -> impl SqlReadBytes {
+        let mut buf = BytesMut::new();
+        buf.put_u32_le(total_len);
+        buf.extend_from_slice(rest);
+        buf.into_sql_read_bytes()
+    }
+
+    // total_len of 1 is non-zero but below the 2 byte minimum (base type +
+    // prop-bytes count). Covers 62-66.
+    #[tokio::test]
+    async fn decode_total_len_below_two_errors() {
+        let err = decode(&mut raw_reader(1, &[])).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // total_len smaller than 2 + prop_bytes is rejected. Covers 71-79.
+    #[tokio::test]
+    async fn decode_total_len_too_small_for_props_errors() {
+        // base type + prop count = 5, but total_len is only 2.
+        let err = decode(&mut raw_reader(2, &[FixedLenType::Int4 as u8, 5]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // data_len exceeding MAX_VARIANT_PAYLOAD is rejected before any allocation.
+    // Covers 87-91.
+    #[tokio::test]
+    async fn decode_data_len_over_max_payload_errors() {
+        // total_len 8005, prop_bytes 2 => data_len 8001 (> 8000).
+        let err = decode(&mut raw_reader(8005, &[VarLenType::BigVarBin as u8, 2]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // A fixed-length base type must not carry property bytes. Covers 97-105.
+    #[tokio::test]
+    async fn decode_fixed_type_with_props_errors() {
+        // base = Int4 (fixed), prop_bytes = 1, total_len 3 => data_len 0.
+        let err = decode(&mut raw_reader(3, &[FixedLenType::Int4 as u8, 1]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // A base type that is neither a known fixed nor var-len type is rejected.
+    // Covers 110-112.
+    #[tokio::test]
+    async fn decode_unknown_base_type_errors() {
+        // 0x00 is not a FixedLenType nor a VarLenType.
+        let err = decode(&mut variant_reader(&[0x00, 0])).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // An nchar/nvarchar value with an odd byte count cannot be a UTF-16 string.
+    // Covers 151-153.
+    #[tokio::test]
+    async fn decode_nchar_odd_length_errors() {
+        let mut payload = vec![VarLenType::NChar as u8, 7];
+        payload.extend_from_slice(&0u32.to_le_bytes()); // collation info
+        payload.push(0); // sort id
+        payload.extend_from_slice(&40u16.to_le_bytes()); // max length
+        payload.extend_from_slice(&[1u8, 2, 3]); // 3 = odd value bytes
+
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // A var-len base type with no sql_variant decode arm (here: Xml) is
+    // rejected via the `other` arm. Covers 203-207.
+    #[tokio::test]
+    async fn decode_unsupported_var_type_errors() {
+        let err = decode(&mut variant_reader(&[VarLenType::Xml as u8, 0]))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // decode_numeric rejects a zero-length value. Covers 235-237.
+    #[tokio::test]
+    async fn decode_numeric_empty_value_errors() {
+        // prop_bytes 2 (precision + scale), no value bytes => data_len 0.
+        let payload = vec![VarLenType::Numericn as u8, 2, 18, 2];
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // decode_numeric rejects a scale greater than 38. Covers 241-245.
+    #[tokio::test]
+    async fn decode_numeric_scale_too_large_errors() {
+        let mut payload = vec![VarLenType::Numericn as u8, 2, 18, 39]; // scale 39
+        payload.push(1); // sign
+        payload.extend_from_slice(&123u32.to_le_bytes());
+
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // decode_numeric rejects a sign byte that is neither 0 nor 1. Covers 250.
+    #[tokio::test]
+    async fn decode_numeric_invalid_sign_errors() {
+        let mut payload = vec![VarLenType::Numericn as u8, 2, 18, 2];
+        payload.push(5); // invalid sign
+        payload.extend_from_slice(&123u32.to_le_bytes());
+
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // An 8-byte magnitude is read as a little-endian u64. Covers 257.
+    #[tokio::test]
+    async fn decode_numeric_eight_byte_magnitude() {
+        let mut payload = vec![VarLenType::Numericn as u8, 2, 18, 0];
+        payload.push(1); // positive sign
+        payload.extend_from_slice(&123_456_789_012u64.to_le_bytes());
+
+        let data = decode(&mut variant_reader(&payload)).await.unwrap();
+        assert_eq!(
+            data,
+            ColumnData::Numeric(Some(Numeric::new_with_scale(123_456_789_012, 0)))
+        );
+    }
+
+    // A magnitude whose length is not 4/8/12/16 is rejected. Covers 268-272.
+    #[tokio::test]
+    async fn decode_numeric_bad_magnitude_length_errors() {
+        let mut payload = vec![VarLenType::Numericn as u8, 2, 18, 0];
+        payload.push(1); // positive sign
+        payload.extend_from_slice(&[1u8, 2, 3, 4, 5]); // 5-byte magnitude
+
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // A string whose UTF-16 encoding exceeds MAX_VARIANT_PAYLOAD is rejected.
+    // Covers 381-390.
+    #[tokio::test]
+    async fn encode_string_over_max_payload_errors() {
+        // 4001 BMP chars => 8002 UTF-16 bytes (> 8000).
+        let s: String = "a".repeat(MAX_VARIANT_PAYLOAD / 2 + 1);
+        let mut buf = BytesMut::new();
+        let err = encode(&mut buf, ColumnData::String(Some(s.into()))).unwrap_err();
+        assert!(matches!(err, Error::Conversion(_)), "got {err:?}");
+    }
+
+    // Binary larger than MAX_VARIANT_PAYLOAD is rejected. Covers 403-412.
+    #[tokio::test]
+    async fn encode_binary_over_max_payload_errors() {
+        let bytes = vec![0u8; MAX_VARIANT_PAYLOAD + 1];
+        let mut buf = BytesMut::new();
+        let err = encode(&mut buf, ColumnData::Binary(Some(bytes.into()))).unwrap_err();
+        assert!(matches!(err, Error::Conversion(_)), "got {err:?}");
+    }
+
+    // datetimeoffset value shorter than the mandatory 5 trailing bytes
+    // (datetime2 + 2 offset bytes) is rejected. Covers 192-195.
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn decode_datetimeoffset_too_short_errors() {
+        // prop_bytes 1 (scale), value = 4 bytes (< 5).
+        let mut payload = vec![VarLenType::DatetimeOffsetn as u8, 1, 0 /* scale */];
+        payload.extend_from_slice(&[0u8; 4]);
+
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
+    }
+
+    // datetimeoffset whose computed time length overflows a u8 is rejected.
+    // Covers 196-198.
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn decode_datetimeoffset_time_len_too_large_errors() {
+        // prop_bytes 1 (scale), value = 261 bytes => time_len 256 (> u8::MAX).
+        let mut payload = vec![VarLenType::DatetimeOffsetn as u8, 1, 0 /* scale */];
+        payload.extend_from_slice(&[0u8; 261]);
+
+        let err = decode(&mut variant_reader(&payload)).await.unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)), "got {err:?}");
     }
 }
