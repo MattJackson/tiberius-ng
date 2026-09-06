@@ -1,3 +1,5 @@
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/MattJackson)
+
 <h1 align="center">Tiberius</h1>
 
 <p align="center">
