@@ -41,7 +41,7 @@ To help us triage quickly, please include as much of the following as you can:
 - Any known mitigations or workarounds.
 
 If you prefer, you may also reach the maintainer directly at
-**dev@getbusbar.com** to initiate contact, but the GitHub Security Advisory is
+**matthew@pq.io** to initiate contact, but the GitHub Security Advisory is
 the preferred channel for the details.
 
 ## Response Expectations
