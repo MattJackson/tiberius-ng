@@ -45,6 +45,9 @@ use std::{
 use tracing::{event, Level};
 
 /// A wrapper to handle either TLS or bare connections.
+// One per connection, and the TLS variant is the common case: boxing it would
+// only add an indirection (the rustls stream is the large one).
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
     #[cfg(any(
