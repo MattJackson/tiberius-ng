@@ -129,6 +129,7 @@ and `Config::from_jdbc_string(…)` are both supported, or build one fluently wi
 | `tds80` | TDS 8.0 support incl. `EncryptionLevel::Strict` (requires a TLS backend) | ✅ |
 | `native-tls` | Encryption via the OS TLS stack (schannel / Secure Transport / OpenSSL) | ✅ |
 | `rustls` | Pure-Rust TLS via `rustls` (recommended on macOS/Apple) | |
+| `rustls-no-provider` | `rustls` without aws-lc-rs; bring your own provider (`Config::tls_crypto_provider` or the process default) | |
 | `vendored-openssl` | Statically-linked OpenSSL | |
 | `chrono` / `time` | Date-time values via `chrono` / the `time` crate | |
 | `rust_decimal` / `bigdecimal` | `numeric`/`decimal` via `Decimal` / `BigDecimal` | |

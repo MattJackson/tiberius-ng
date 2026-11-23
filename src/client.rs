@@ -4,7 +4,7 @@ mod connection;
 
 mod tls;
 #[cfg(any(
-    feature = "rustls",
+    feature = "rustls-no-provider",
     feature = "native-tls",
     feature = "vendored-openssl"
 ))]

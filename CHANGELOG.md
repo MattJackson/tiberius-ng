@@ -13,7 +13,25 @@ version 0.12.3 reflect the history of the upstream project prior to the fork.
 
 ## [Unreleased]
 
-Nothing yet. **0.13.1 is a stable settling point** — the fork has cleared the
+### Added
+
+- **`Config::tls_crypto_provider(provider, versions)`** (rustls backends):
+  choose the rustls `CryptoProvider` and TLS protocol versions for one
+  connection, for example a FIPS provider with TLS 1.3 under
+  `EncryptionLevel::Strict`. Trust, host-name checks, client certificates,
+  ALPN and TDS behave as before. A selection requires a verified, encrypted
+  session: it is refused with `trust_cert()` or an encryption level other than
+  `Required`/`Strict`, and that check is repeated when connecting. If the
+  selected provider is in FIPS mode, the finished client configuration must be
+  too.
+- **`rustls-no-provider` feature**: the rustls backend without aws-lc-rs. The
+  provider comes from `Config::tls_crypto_provider` or, when none is selected,
+  the process default (`CryptoProvider::install_default`), with rustls' default
+  protocol versions. `rustls` is unchanged: it now means
+  `rustls-no-provider` plus aws-lc-rs, and connections without a selection
+  still use aws-lc-rs over TLS 1.2.
+
+**0.13.1 is a stable settling point** — the fork has cleared the
 security advisories, worked through the upstream backlog, and hardened the
 codebase (100% mutation score, ~93% line coverage against a live SQL Server in
 CI). No further releases are planned in the immediate term; the crate is

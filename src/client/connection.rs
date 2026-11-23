@@ -1,5 +1,5 @@
 #[cfg(any(
-    feature = "rustls",
+    feature = "rustls-no-provider",
     feature = "native-tls",
     feature = "vendored-openssl"
 ))]
@@ -89,6 +89,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Note: `tcp_stream` is a connected stream, so some parts of the
     /// [`Config`] need to be handled outside of this method.
     pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>> {
+        // A selected TLS provider must not be combined with a later switch to
+        // an unverified or unencrypted session; refuse before any wire I/O.
+        #[cfg(feature = "rustls-no-provider")]
+        if config.tls_provider.is_some() {
+            config.check_selected_tls_policy()?;
+        }
+
         let context = {
             let mut context = Context::new();
             context.set_spn(config.get_host(), config.get_port());
@@ -100,7 +107,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         // the connection starts in the clear and TLS (if any) is negotiated
         // during the prelogin.
         #[cfg(any(
-            feature = "rustls",
+            feature = "rustls-no-provider",
             feature = "native-tls",
             feature = "vendored-openssl"
         ))]
@@ -119,7 +126,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         };
 
         #[cfg(not(any(
-            feature = "rustls",
+            feature = "rustls-no-provider",
             feature = "native-tls",
             feature = "vendored-openssl"
         )))]
@@ -178,7 +185,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -198,7 +205,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     #[cfg(not(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     )))]
@@ -697,7 +704,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -756,7 +763,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     )))]
@@ -783,7 +790,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 /// compiled in. Without this check, a `Required`/`On` encryption request would
 /// silently fall back to an unencrypted connection.
 #[cfg(not(any(
-    feature = "rustls",
+    feature = "rustls-no-provider",
     feature = "native-tls",
     feature = "vendored-openssl"
 )))]
@@ -802,7 +809,7 @@ fn check_tls_backend_available(encryption: EncryptionLevel) -> crate::Result<()>
 #[cfg(all(
     test,
     not(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))

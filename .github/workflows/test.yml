@@ -47,6 +47,12 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --features=all -- -D warnings
+      # `all` carries native-tls; the TLS backends are mutually exclusive, so
+      # lint the rustls variants separately.
+      - name: Clippy (rustls)
+        run: cargo clippy --no-default-features --features=tds80,rustls -- -D warnings
+      - name: Clippy (rustls-no-provider)
+        run: cargo clippy --no-default-features --features=tds80,rustls-no-provider -- -D warnings
 
   unit:
     name: unit tests (no server)
@@ -65,6 +71,8 @@ jobs:
         run: sudo apt-get install -y openssl libkrb5-dev
       - name: Run library unit tests
         run: cargo test --lib --features all
+      - name: Run library unit tests (rustls)
+        run: cargo test --lib --no-default-features --features=tds80,rustls
 
   msrv:
     name: MSRV (1.88)
