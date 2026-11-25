@@ -13,6 +13,8 @@ version 0.12.3 reflect the history of the upstream project prior to the fork.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-25
+
 ### Added
 
 - **`Config::tls_crypto_provider(provider, versions)`** (rustls backends):
@@ -568,6 +570,7 @@ has completely settled on Tokio 1.0.
 - Support for many more types
 - Async/await, futures 0.3
 
-[Unreleased]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/MattJackson/tiberius-ng/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/MattJackson/tiberius-ng/compare/v0.12.3...v0.13.0
