@@ -1002,6 +1002,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn config_and_builder_stay_unwind_safe() {
+        fn unwind_safe<T: std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+        unwind_safe::<Config>();
+        unwind_safe::<ConfigBuilder>();
+    }
+
+    #[test]
     fn config_builder_constructs_config() {
         let config = Config::builder()
             .host("db.example.com")
