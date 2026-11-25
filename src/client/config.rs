@@ -62,6 +62,15 @@ pub(crate) struct SelectedTlsProvider {
     pub(crate) versions: &'static [&'static tokio_rustls::rustls::SupportedProtocolVersion],
 }
 
+// `CryptoProvider` holds `&'static dyn` algorithm tables, which are not
+// `UnwindSafe`/`RefUnwindSafe` by default. The selection is never mutated after
+// it is set, so a panic cannot leave it half-updated. Keeping both traits keeps
+// `Config` and `ConfigBuilder` implementing them, as they did before.
+#[cfg(feature = "rustls-no-provider")]
+impl std::panic::UnwindSafe for SelectedTlsProvider {}
+#[cfg(feature = "rustls-no-provider")]
+impl std::panic::RefUnwindSafe for SelectedTlsProvider {}
+
 #[derive(Clone, Debug)]
 pub(crate) enum TrustConfig {
     #[allow(dead_code)]
