@@ -112,8 +112,13 @@ jobs:
         run: sudo apt-get install -y openssl libkrb5-dev
       - name: Install cargo-semver-checks
         uses: taiki-e/install-action@cargo-semver-checks
-      - name: Check for semver-breaking changes
-        run: cargo semver-checks --baseline-rev "origin/${{ github.base_ref }}"
+      # The TLS backends (native-tls, rustls, vendored-openssl) are mutually
+      # exclusive, so the default feature heuristic (every feature at once)
+      # cannot even document the crate. Check each backend's API on its own.
+      - name: Check for semver-breaking changes (native-tls, all)
+        run: cargo semver-checks --baseline-rev "origin/${{ github.base_ref }}" --only-explicit-features --features all
+      - name: Check for semver-breaking changes (rustls)
+        run: cargo semver-checks --baseline-rev "origin/${{ github.base_ref }}" --only-explicit-features --features rustls
 
   smoke:
     name: integration smoke (SQL 2022)
