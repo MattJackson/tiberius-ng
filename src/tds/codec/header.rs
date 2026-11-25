@@ -145,7 +145,7 @@ impl PacketHeader {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]

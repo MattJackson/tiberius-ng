@@ -19,10 +19,10 @@ use tokio_rustls::{
             danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
             WantsClientCert,
         },
-        crypto::aws_lc_rs,
+        crypto::CryptoProvider,
         pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer, ServerName, UnixTime},
-        version, ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError,
-        RootCertStore, SignatureScheme, WantsVerifier,
+        ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError, RootCertStore,
+        SignatureScheme, SupportedProtocolVersion, WantsVerifier,
     },
     TlsConnector,
 };
@@ -102,12 +102,53 @@ fn get_server_name(config: &Config) -> crate::Result<ServerName<'static>> {
     }
 }
 
+type ProviderAndVersions = (
+    Arc<CryptoProvider>,
+    &'static [&'static SupportedProtocolVersion],
+);
+
+/// The provider used when the `Config` selects none: with the `rustls`
+/// feature, aws-lc-rs over TLS 1.2 (the long-standing behaviour).
+#[cfg(feature = "rustls")]
+fn default_provider_and_versions() -> crate::Result<ProviderAndVersions> {
+    use tokio_rustls::rustls::{crypto::aws_lc_rs, version};
+
+    static TLS12_ONLY: &[&SupportedProtocolVersion] = &[&version::TLS12];
+
+    Ok((Arc::new(aws_lc_rs::default_provider()), TLS12_ONLY))
+}
+
+/// The provider used when the `Config` selects none: with only
+/// `rustls-no-provider`, the process default provider and rustls' default
+/// protocol versions.
+#[cfg(not(feature = "rustls"))]
+fn default_provider_and_versions() -> crate::Result<ProviderAndVersions> {
+    let provider = CryptoProvider::get_default().cloned().ok_or_else(|| {
+        crate::Error::Tls(
+            "no rustls crypto provider: use Config::tls_crypto_provider or install a process default"
+                .into(),
+        )
+    })?;
+    Ok((provider, tokio_rustls::rustls::DEFAULT_VERSIONS))
+}
+
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
     pub(super) async fn new(config: &Config, stream: S) -> crate::Result<Self> {
         event!(Level::DEBUG, "Performing a TLS handshake");
 
-        let builder = ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
-            .with_protocol_versions(&[&version::TLS12])
+        let (provider, versions) = match &config.tls_provider {
+            Some(selected) => {
+                config.check_selected_tls_policy()?;
+                (selected.provider.clone(), selected.versions)
+            }
+            None => default_provider_and_versions()?,
+        };
+        // A FIPS provider chosen for this connection must still be in FIPS
+        // mode once the full client configuration is assembled.
+        let require_fips = config.tls_provider.is_some() && provider.fips();
+
+        let builder = ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(versions)
             .map_err(|e| crate::Error::Tls(e.to_string()))?;
 
         // First select the server-certificate verification strategy, yielding a
@@ -202,6 +243,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
             client_config
                 .alpn_protocols
                 .push(super::TDS_ALPN_PROTOCOL_NAME.as_bytes().to_vec());
+        }
+
+        if require_fips && !client_config.fips() {
+            return Err(crate::Error::Tls(
+                "TLS configuration is not in FIPS mode although the selected provider is".into(),
+            ));
         }
 
         let connector = TlsConnector::from(Arc::new(client_config));

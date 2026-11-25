@@ -96,7 +96,7 @@ impl PreloginMessage {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -122,7 +122,7 @@ impl PreloginMessage {
     }
 
     #[cfg(not(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     )))]
@@ -538,7 +538,7 @@ mod tests {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -613,7 +613,7 @@ mod tests {
     // #425: a server declining the requested encryption level must yield a
     // catchable protocol error instead of panicking.
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]

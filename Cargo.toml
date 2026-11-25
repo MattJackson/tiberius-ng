@@ -141,6 +141,7 @@ optional = true
 [dependencies.tokio-rustls]
 version = "0.26"
 optional = true
+default-features = false
 
 [dependencies.rustls-native-certs]
 version = "0.8"
@@ -229,7 +230,11 @@ sql-browser-tokio = ["tokio", "tokio-util"]
 sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = ["bigdecimal_"]
-rustls = ["tokio-rustls", "tokio-util", "rustls-native-certs"]
+rustls = ["rustls-no-provider", "tokio-rustls/default"]
+# The rustls backend without a built-in crypto provider (no aws-lc-rs). The
+# provider comes from `Config::tls_crypto_provider` or, when none is selected,
+# from the process default (`rustls::crypto::CryptoProvider::install_default`).
+rustls-no-provider = ["tokio-rustls", "tokio-util", "rustls-native-certs"]
 native-tls = ["async-native-tls"]
 vendored-openssl = ["opentls"]
 # Enables Windows-style SSPI/NTLM authentication (`AuthMethod::Windows`) on Unix

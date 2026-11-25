@@ -44,12 +44,32 @@ pub struct Config {
     pub(crate) client_name: Option<String>,
     pub(crate) multi_subnet_failover: bool,
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
     pub(crate) client_cert: Option<ClientCertificate>,
+    #[cfg(feature = "rustls-no-provider")]
+    pub(crate) tls_provider: Option<SelectedTlsProvider>,
 }
+
+/// A rustls crypto provider and protocol versions chosen for one connection
+/// with [`Config::tls_crypto_provider`].
+#[cfg(feature = "rustls-no-provider")]
+#[derive(Clone, Debug)]
+pub(crate) struct SelectedTlsProvider {
+    pub(crate) provider: std::sync::Arc<tokio_rustls::rustls::crypto::CryptoProvider>,
+    pub(crate) versions: &'static [&'static tokio_rustls::rustls::SupportedProtocolVersion],
+}
+
+// `CryptoProvider` holds `&'static dyn` algorithm tables, which are not
+// `UnwindSafe`/`RefUnwindSafe` by default. The selection is never mutated after
+// it is set, so a panic cannot leave it half-updated. Keeping both traits keeps
+// `Config` and `ConfigBuilder` implementing them, as they did before.
+#[cfg(feature = "rustls-no-provider")]
+impl std::panic::UnwindSafe for SelectedTlsProvider {}
+#[cfg(feature = "rustls-no-provider")]
+impl std::panic::RefUnwindSafe for SelectedTlsProvider {}
 
 #[derive(Clone, Debug)]
 pub(crate) enum TrustConfig {
@@ -67,7 +87,7 @@ pub(crate) enum TrustConfig {
 /// certificate + private-key files) or [`Config::client_certificate_pkcs12`]
 /// (a PKCS#12 / PFX bundle, `native-tls` and `vendored-openssl` only).
 #[cfg(any(
-    feature = "rustls",
+    feature = "rustls-no-provider",
     feature = "native-tls",
     feature = "vendored-openssl"
 ))]
@@ -77,7 +97,7 @@ pub(crate) struct ClientCertificate {
 }
 
 #[cfg(any(
-    feature = "rustls",
+    feature = "rustls-no-provider",
     feature = "native-tls",
     feature = "vendored-openssl"
 ))]
@@ -99,7 +119,7 @@ pub(crate) enum ClientCertSource {
 
 // Manual `Debug` so the PKCS#12 password is never printed.
 #[cfg(any(
-    feature = "rustls",
+    feature = "rustls-no-provider",
     feature = "native-tls",
     feature = "vendored-openssl"
 ))]
@@ -130,13 +150,13 @@ impl Default for Config {
             instance_name: None,
             application_name: None,
             #[cfg(any(
-                feature = "rustls",
+                feature = "rustls-no-provider",
                 feature = "native-tls",
                 feature = "vendored-openssl"
             ))]
             encryption: EncryptionLevel::Required,
             #[cfg(not(any(
-                feature = "rustls",
+                feature = "rustls-no-provider",
                 feature = "native-tls",
                 feature = "vendored-openssl"
             )))]
@@ -149,16 +169,89 @@ impl Default for Config {
             client_name: None,
             multi_subnet_failover: false,
             #[cfg(any(
-                feature = "rustls",
+                feature = "rustls-no-provider",
                 feature = "native-tls",
                 feature = "vendored-openssl"
             ))]
             client_cert: None,
+            #[cfg(feature = "rustls-no-provider")]
+            tls_provider: None,
         }
     }
 }
 
 impl Config {
+    /// Use the given rustls crypto provider and protocol versions for this
+    /// connection's TLS handshake, instead of the crate default.
+    ///
+    /// Only the cryptography and the protocol versions change: certificate
+    /// trust, host-name verification, client certificates, ALPN and the TDS
+    /// protocol behave as without a selection. The selection is local to this
+    /// `Config`; no process-wide state is read or written.
+    ///
+    /// Selecting a provider is a statement about how the session is protected,
+    /// so it requires a TLS-protected, verified session: it fails if
+    /// [`trust_cert`] is set, or if the encryption level is anything other than
+    /// [`EncryptionLevel::Required`] or [`EncryptionLevel::Strict`]. The same
+    /// check runs again when connecting, so changing either setting afterwards
+    /// makes the connection fail before anything is sent.
+    ///
+    /// It also fails if the provider cannot serve any of `versions` (for
+    /// example, no cipher suite for them).
+    ///
+    /// Note that SQL Server only negotiates TLS 1.3 with
+    /// [`EncryptionLevel::Strict`] (TDS 8.0); with `Required` the TLS handshake
+    /// runs inside TDS pre-login packets, which SQL Server supports with
+    /// TLS 1.2.
+    ///
+    /// ```no_run
+    /// use std::sync::Arc;
+    /// use tiberius::{Config, EncryptionLevel};
+    /// use tokio_rustls::rustls::{crypto::CryptoProvider, version};
+    ///
+    /// fn strict_tls13(provider: Arc<CryptoProvider>) -> tiberius::Result<Config> {
+    ///     let mut config = Config::new();
+    ///     config.encryption(EncryptionLevel::Strict);
+    ///     config.tls_crypto_provider(provider, &[&version::TLS13])?;
+    ///     Ok(config)
+    /// }
+    /// # let _ = strict_tls13;
+    /// ```
+    ///
+    /// [`trust_cert`]: Config::trust_cert
+    #[cfg(feature = "rustls-no-provider")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rustls-no-provider")))]
+    pub fn tls_crypto_provider(
+        &mut self,
+        provider: std::sync::Arc<tokio_rustls::rustls::crypto::CryptoProvider>,
+        versions: &'static [&'static tokio_rustls::rustls::SupportedProtocolVersion],
+    ) -> crate::Result<()> {
+        self.check_selected_tls_policy()?;
+        tokio_rustls::rustls::ClientConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(versions)
+            .map_err(|e| crate::Error::Tls(e.to_string()))?;
+        self.tls_provider = Some(SelectedTlsProvider { provider, versions });
+        Ok(())
+    }
+
+    /// Refuses settings that would defeat an explicitly selected TLS provider:
+    /// an unverified server certificate or a session that is not encrypted
+    /// end to end.
+    #[cfg(feature = "rustls-no-provider")]
+    pub(crate) fn check_selected_tls_policy(&self) -> crate::Result<()> {
+        if matches!(self.trust, TrustConfig::TrustAll)
+            || !matches!(
+                self.encryption,
+                EncryptionLevel::Required | EncryptionLevel::Strict
+            )
+        {
+            return Err(crate::Error::Tls(
+                "selected TLS provider requires verified full-session encryption".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Create a new `Config` with the default settings.
     pub fn new() -> Self {
         Self::default()
@@ -369,14 +462,14 @@ impl Config {
     ///
     /// [`client_certificate_pkcs12`]: Config::client_certificate_pkcs12
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
     #[cfg_attr(
         docsrs,
         doc(cfg(any(
-            feature = "rustls",
+            feature = "rustls-no-provider",
             feature = "native-tls",
             feature = "vendored-openssl"
         )))
@@ -421,7 +514,7 @@ impl Config {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -437,7 +530,7 @@ impl Config {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -693,14 +786,14 @@ impl ConfigBuilder {
     ///
     /// See [`Config::client_certificate`] for details and backend support.
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
     #[cfg_attr(
         docsrs,
         doc(cfg(any(
-            feature = "rustls",
+            feature = "rustls-no-provider",
             feature = "native-tls",
             feature = "vendored-openssl"
         )))
@@ -852,7 +945,7 @@ pub(crate) trait ConfigString {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -880,7 +973,7 @@ pub(crate) trait ConfigString {
     }
 
     #[cfg(not(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     )))]
@@ -916,6 +1009,13 @@ pub(crate) trait ConfigString {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_and_builder_stay_unwind_safe() {
+        fn unwind_safe<T: std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+        unwind_safe::<Config>();
+        unwind_safe::<ConfigBuilder>();
+    }
 
     #[test]
     fn config_builder_constructs_config() {
@@ -973,7 +1073,7 @@ mod tests {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -989,7 +1089,7 @@ mod tests {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -1014,7 +1114,7 @@ mod tests {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -1190,7 +1290,7 @@ mod tests {
     }
 
     #[cfg(any(
-        feature = "rustls",
+        feature = "rustls-no-provider",
         feature = "native-tls",
         feature = "vendored-openssl"
     ))]
@@ -1239,6 +1339,95 @@ mod tests {
                 assert_eq!("onlyuser", auth.user);
             }
             other => panic!("expected Windows auth, got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "rustls")]
+    mod selected_tls_provider {
+        use super::*;
+        use std::sync::Arc;
+        use tokio_rustls::rustls::{
+            crypto::{aws_lc_rs, CryptoProvider},
+            version, SupportedProtocolVersion,
+        };
+        use tokio_util::compat::TokioAsyncWriteCompatExt;
+
+        static TLS13: &[&SupportedProtocolVersion] = &[&version::TLS13];
+
+        fn provider() -> Arc<CryptoProvider> {
+            Arc::new(aws_lc_rs::default_provider())
+        }
+
+        #[test]
+        fn accepted_for_verified_encrypted_sessions() {
+            for level in [EncryptionLevel::Required, EncryptionLevel::Strict] {
+                let mut config = Config::new();
+                config.encryption(level);
+                config.tls_crypto_provider(provider(), TLS13).unwrap();
+                let selected = config.tls_provider.as_ref().unwrap();
+                assert_eq!(selected.versions.len(), 1);
+                assert_eq!(selected.versions[0].version, version::TLS13.version);
+            }
+
+            let mut config = Config::new();
+            config.trust_cert_ca("ca.pem");
+            config.tls_crypto_provider(provider(), TLS13).unwrap();
+        }
+
+        #[test]
+        fn refused_for_unverified_or_unencrypted_sessions() {
+            let mut config = Config::new();
+            config.trust_cert();
+            assert!(config.tls_crypto_provider(provider(), TLS13).is_err());
+            assert!(config.tls_provider.is_none());
+
+            for level in [
+                EncryptionLevel::Off,
+                EncryptionLevel::On,
+                EncryptionLevel::NotSupported,
+            ] {
+                let mut config = Config::new();
+                config.encryption(level);
+                assert!(config.tls_crypto_provider(provider(), TLS13).is_err());
+                assert!(config.tls_provider.is_none());
+            }
+        }
+
+        #[test]
+        fn refused_when_provider_cannot_serve_versions() {
+            let empty = CryptoProvider {
+                cipher_suites: Vec::new(),
+                ..aws_lc_rs::default_provider()
+            };
+            let mut config = Config::new();
+            assert!(config.tls_crypto_provider(Arc::new(empty), TLS13).is_err());
+            assert!(config.tls_provider.is_none());
+        }
+
+        #[tokio::test]
+        async fn later_policy_change_fails_before_any_io() {
+            for plaintext in [false, true] {
+                let mut config = Config::new();
+                config.tls_crypto_provider(provider(), TLS13).unwrap();
+                if plaintext {
+                    config.encryption(EncryptionLevel::NotSupported);
+                } else {
+                    config.trust_cert();
+                }
+                let (client, mut server) = tokio::io::duplex(1024);
+                let error = crate::Client::connect(config, client.compat_write())
+                    .await
+                    .expect_err("a changed policy must be refused");
+                assert!(error
+                    .to_string()
+                    .contains("selected TLS provider requires verified full-session encryption"));
+
+                let mut buf = [0u8; 1];
+                let read = tokio::io::AsyncReadExt::read(&mut server, &mut buf)
+                    .await
+                    .unwrap();
+                assert_eq!(read, 0, "nothing may be written to the server");
+            }
         }
     }
 }
